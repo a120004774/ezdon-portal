@@ -36,11 +36,22 @@ input:disabled{background:#f2f4f7;color:var(--muted)}
 .file{font-size:14px;padding:6px 0;word-break:break-all}
 .bar{position:fixed;left:0;right:0;bottom:0;background:var(--card);padding:10px 12px calc(10px + env(safe-area-inset-bottom));box-shadow:0 -2px 8px rgba(0,0,0,.12)}
 .bar .muted{margin-bottom:6px}
+@keyframes ez-spin{to{transform:rotate(360deg)}}
+@keyframes ez-slide{0%{left:-40%}100%{left:100%}}
+.spin{display:inline-block;width:16px;height:16px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:ez-spin .7s linear infinite;vertical-align:-3px;flex:none}
+#progress{position:fixed;top:0;left:0;right:0;height:4px;overflow:hidden;background:var(--accent-soft);display:none;z-index:20}
+#progress i{position:absolute;top:0;bottom:0;width:40%;background:var(--accent);animation:ez-slide 1.1s ease-in-out infinite}
+#busy{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(16px + env(safe-area-inset-bottom));background:var(--text);color:#fff;border-radius:999px;padding:10px 18px;font-size:15px;display:none;align-items:center;gap:10px;z-index:20;box-shadow:0 4px 14px rgba(0,0,0,.3);width:max-content;max-width:calc(100% - 24px)}
+body.has-bar #busy{bottom:calc(100px + env(safe-area-inset-bottom))}
+.startup{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--accent);font-weight:600}.startup .spin{width:22px;height:22px;border-width:3px}
+.pendingFile{color:var(--warn)}
 </style></head>
 <body>
-<div class="card"><h2>一起動計薪確認</h2><div id="who" class="muted">正在確認 LINE 身分…</div></div>
+<div id="progress"><i></i></div>
+<div class="card"><h2>一起動計薪確認</h2><div id="who" class="startup"><span class="spin"></span><span id="whoText">正在確認 LINE 身分…</span></div></div>
 <div id="main"></div>
 <div id="bar"></div>
+<div id="busy"><span class="spin"></span><span id="busyText"></span></div>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
 // Public page: no secrets and no payroll data here; every API call is checked on the server with the LINE ID token.
@@ -51,7 +62,11 @@ function call(name){
   .then(function(res){return res.json()})
   .then(function(r){if(r&&r.ok)return r.result;throw Error(r?r.error:'沒有回應')});
 }
-function show(text,isErr){var d=document.getElementById('who');d.textContent=text;d.className=isErr?'err':'muted'}
+function show(text,isErr){var d=document.getElementById('who');d.textContent=text;d.className=isErr?'err':'muted';working(false)}
+function showStep(text){document.getElementById('whoText').textContent=text}
+// While the system works: a moving bar on top from the very start, and a counter so a long wait doesn't look frozen.
+function working(on){document.getElementById('progress').style.display=on?'block':'none'}
+working(true);
 // A failed SDK load or a hung call would otherwise leave the page on the first message forever.
 var step='載入 LINE SDK',done=false;
 var timer=setTimeout(function(){if(!done)show('逾時，停在：'+step,true)},60000);
@@ -78,13 +93,26 @@ function localTime(iso){var d=new Date(Date.parse(iso)+8*3600e3);return isNaN(d)
 var EVAL_ITEMS=[['admin','行政考核'],['execution','執行考核'],['target','經理指定目標']];
 var TABS=[['coach','教練'],['visiting','跑課'],['instructor','教官']];
 var LABELS={partTime:'兼職教練',visiting:'跑課老師',instructor:'教官課程'};
-var S={token:'',view:null,branch:'',tab:'coach',drafts:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},queue:Promise.resolve(),storeKey:''};
+var S={token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
+function picked(id){return S.picked[id]||(S.picked[id]=[])}
+function refreshBusy(){
+ var n=savingCount(),box=document.getElementById('busy');
+ if(n&&!S.since)S.since=Date.now();
+ if(!n){S.since=0;S.phase=''}
+ working(n>0);
+ box.style.display=n?'flex':'none';
+ if(n){
+  var secs=Math.floor((Date.now()-S.since)/1000);
+  document.getElementById('busyText').textContent=(S.phase||'處理中，請稍候')+(secs>=2?'（'+secs+' 秒）':'…');
+ }
+}
+setInterval(function(){if(S.since)refreshBusy()},1000);
 function sameName(a,b){return String(a).trim().toLowerCase()===String(b).trim().toLowerCase()}
 function setMsg(text,kind){S.msg=text?{text:text,kind:kind||'good'}:null}
 function savingCount(){return Object.keys(S.saving).length}
 // Saves run one after another in the background, so the page stays usable; nothing is shown as saved until the server says so.
-function run(id,task,ok,okText){
- S.saving[id]=true;setMsg('');render();
+function run(id,task,ok,okText,phase){
+ S.saving[id]=true;S.phase=phase||S.phase;setMsg('');render();
  S.queue=S.queue.then(task).then(function(r){delete S.saving[id];if(ok)ok(r);if(okText)setMsg(okText);render()})
   .catch(function(e){delete S.saving[id];setMsg(e.message||String(e),'bad');render();window.scrollTo(0,0)});
 }
@@ -103,32 +131,33 @@ function storeDrafts(){
  S.view.staff.forEach(function(s){var n=cardState(s).name;if(n==='ready'||n==='missing')keep[cardId(s)]=draftOf(s)});
  try{localStorage.setItem(S.storeKey,JSON.stringify(keep))}catch(e){}
 }
-function loadDrafts(){try{S.drafts=JSON.parse(localStorage.getItem(S.storeKey)||'{}')||{};Object.keys(S.drafts).forEach(function(k){S.drafts[k].uploading=false})}catch(e){S.drafts={}}}
+function loadDrafts(){try{S.drafts=JSON.parse(localStorage.getItem(S.storeKey)||'{}')||{}}catch(e){S.drafts={}}}
 
 // ---------- coach cards: each coach is either full-time (三項考核) or part-time (工時), all saved together ----------
 function cardId(s){return s.branch+'|'+s.english}
 function draftOf(s){
  var k=cardId(s);if(S.drafts[k])return S.drafts[k];
  var ev=lineOf('evaluation',s.branch,s.english),pt=lineOf('partTime',s.branch,s.english),p=pt?pt.payload:{};
- return S.drafts[k]={type:pt?'partTime':'fullTime',values:ev?Object.assign({},ev.payload):{},hours:pt?String(p.hours):'',holidayHours:pt?String(p.holidayHours||0):'',attachments:pt?(pt.attachments||[]).slice():[],reason:'',uploading:false};
+ return S.drafts[k]={type:pt?'partTime':'fullTime',values:ev?Object.assign({},ev.payload):{},hours:pt?String(p.hours):'',holidayHours:pt?String(p.holidayHours||0):'',attachments:pt?(pt.attachments||[]).slice():[],reason:''};
 }
 /** What a card needs: saved (nothing to do) / empty (untouched) / ready (can be saved) / missing:<what>. */
 function cardState(s){
  var d=draftOf(s),ev=lineOf('evaluation',s.branch,s.english),pt=lineOf('partTime',s.branch,s.english),had=!!(ev||pt);
- var filled=d.type==='fullTime'?EVAL_ITEMS.every(function(i){return !!d.values[i[0]]}):d.hours!==''&&d.attachments.length>0&&!d.uploading;
+ var newFiles=picked(cardId(s)).length;
+ var filled=d.type==='fullTime'?EVAL_ITEMS.every(function(i){return !!d.values[i[0]]}):d.hours!==''&&d.attachments.length+newFiles>0;
  var ids=function(list){return list.map(function(a){return a.id}).join()};
  var changed;
  if(d.type==='fullTime')changed=pt?true:ev?EVAL_ITEMS.some(function(i){return d.values[i[0]]!==ev.payload[i[0]]}):EVAL_ITEMS.some(function(i){return !!d.values[i[0]]});
- else changed=ev?true:pt?Number(d.hours)!==pt.payload.hours||Number(d.holidayHours||0)!==(pt.payload.holidayHours||0)||ids(d.attachments)!==ids(pt.attachments||[]):true;
+ else changed=ev?true:pt?Number(d.hours)!==pt.payload.hours||Number(d.holidayHours||0)!==(pt.payload.holidayHours||0)||ids(d.attachments)!==ids(pt.attachments||[])||newFiles>0:true;
  if(!changed)return {name:had?'saved':'empty',had:had};
- if(!filled)return {name:'missing',had:had,what:d.type==='fullTime'?'考核沒選完':d.uploading?'相片上傳中':d.hours===''?'沒填工時':'沒上傳紙本'};
+ if(!filled)return {name:'missing',had:had,what:d.type==='fullTime'?'考核沒選完':d.hours===''?'沒填工時':'沒選紙本'};
  if(had&&!d.reason.trim())return {name:'missing',had:had,what:'沒填修改原因'};
  return {name:'ready',had:had};
 }
 function touch(){storeDrafts();renderBar()}
 function coachCard(s){
  var d=draftOf(s),st=cardState(s),id=cardId(s),busy=!!S.saving['card:'+id];
- var badge=busy?el('span',{class:'badge edit',text:'儲存中'}):st.name==='saved'?el('span',{class:'badge',text:'已儲存'}):st.name==='empty'?el('span',{class:'badge todo',text:'未填'}):el('span',{class:'badge edit',text:'未儲存'});
+ var badge=busy?el('span',{class:'badge edit'},el('span',{class:'spin',style:'width:11px;height:11px;margin-right:4px;vertical-align:-1px'}),'儲存中'):st.name==='saved'?el('span',{class:'badge',text:'已儲存'}):st.name==='empty'?el('span',{class:'badge todo',text:'未填'}):el('span',{class:'badge edit',text:'未儲存'});
  var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:s.english+'（'+s.title+'）'}),badge));
  if(S.errors[id])card.appendChild(el('div',{class:'err',text:S.errors[id],style:'font-size:14px;margin-top:4px'}));
  var pick=function(field,value){return function(){d[field]=value;delete S.errors[id];storeDrafts();render()}};
@@ -148,7 +177,7 @@ function coachCard(s){
   card.appendChild(el('div',{class:'two'},
    field(d,'hours','一般工時（小時）',{type:'number',inputMode:'decimal',step:'0.5',min:'0',disabled:busy},id,touch),
    field(d,'holidayHours','國定假日工時',{type:'number',inputMode:'decimal',step:'0.5',min:'0',disabled:busy},id,touch)));
-  attachmentBox(card,d,'partTime',s.branch,function(){return s.english},busy);
+  attachmentBox(card,d,picked(id),busy);
  }
  if(st.had&&st.name!=='saved'&&st.name!=='empty'){
   card.appendChild(field(d,'reason','修改原因（必填）',{disabled:busy},id,touch));
@@ -168,27 +197,46 @@ function renderCoach(m){
  if(S.form&&S.form.kind==='partTime')m.appendChild(lineForm(S.form));
  else if(S.view.windows.initial.open)m.appendChild(el('button',{class:'link',text:'＋ 新增不在名單上的兼職教練',on:{click:function(){S.form=blankForm('partTime');S.withdrawing=null;setMsg('');render()}}}));
 }
+// Every selected card, with its photos, goes up together; very large sets are split so one request stays within the limit.
+var MAX_REQUEST=19000000;
 function saveAll(){
  var picks=S.view.staff.filter(function(s){return cardState(s).name==='ready'&&!S.saving['card:'+cardId(s)]});
  if(!picks.length)return;
- var lines=picks.map(function(s){
+ var build=picks.map(function(s){
   var d=draftOf(s),had=cardState(s).had,reason=had?d.reason.trim():undefined;
-  if(d.type==='fullTime')return {kind:'evaluation',branch:s.branch,english:s.english,payload:d.values,reason:reason};
-  return {kind:'partTime',branch:s.branch,english:s.english,payload:{hours:Number(d.hours),holidayHours:Number(d.holidayHours||0),attachmentIds:d.attachments.map(function(a){return a.id})},reason:reason};
- });
- picks.forEach(function(s){S.saving['card:'+cardId(s)]=true;delete S.errors[cardId(s)]});
- setMsg('');render();
- S.queue=S.queue.then(function(){return call('portalSubmitMany',S.token,S.view.month,lines)}).then(function(res){
-  var bad=0;
-  res.results.forEach(function(r,i){
-   var id=cardId(picks[i]);delete S.saving['card:'+id];
-   if(r.ok){mergeSaved(r);delete S.drafts[id]}else{bad++;S.errors[id]=r.error}
+  if(d.type==='fullTime')return Promise.resolve({kind:'evaluation',branch:s.branch,english:s.english,payload:d.values,reason:reason});
+  return Promise.all(picked(cardId(s)).map(preparedFile)).then(function(files){
+   return {kind:'partTime',branch:s.branch,english:s.english,payload:{hours:Number(d.hours),holidayHours:Number(d.holidayHours||0),attachmentIds:d.attachments.map(function(a){return a.id})},reason:reason,
+    files:files.map(function(p){return {fileName:p.name,mime:p.mime,base64:p.base64}})};
   });
+ });
+ var hasPhotos=picks.some(function(s){return draftOf(s).type==='partTime'&&picked(cardId(s)).length>0});
+ picks.forEach(function(s){S.saving['card:'+cardId(s)]=true;delete S.errors[cardId(s)]});
+ S.phase=hasPhotos?'正在處理相片':'正在儲存 '+picks.length+' 位';
+ setMsg('');render();
+ var saved=0,failed=0;
+ var finish=function(card,r){var id=cardId(card);delete S.saving['card:'+id];
+  if(r.ok){saved++;mergeSaved(r);delete S.drafts[id];delete S.picked[id]}else{failed++;S.errors[id]=r.error}};
+ S.queue=S.queue.then(function(){return Promise.all(build)}).then(function(lines){
+  S.phase=hasPhotos?'正在上傳相片並儲存 '+picks.length+' 位':S.phase;refreshBusy();
+  var chunks=[],size=0;
+  lines.forEach(function(l,i){
+   var n=JSON.stringify(l).length;
+   if(!chunks.length||size+n>MAX_REQUEST){chunks.push([]);size=0}
+   chunks[chunks.length-1].push(i);size+=n;
+  });
+  return chunks.reduce(function(p,idx){return p.then(function(){
+   return call('portalSubmitMany',S.token,S.view.month,idx.map(function(i){return lines[i]})).then(function(res){
+    res.results.forEach(function(r,k){finish(picks[idx[k]],r)});render();
+   });
+  })},Promise.resolve());
+ }).then(function(){
   storeDrafts();
-  setMsg(bad?(res.results.length-bad)+' 位已儲存，'+bad+' 位沒有存好，請看卡片上的原因':res.results.length+' 位已儲存',bad?'bad':'good');
+  setMsg(failed?saved+' 位已儲存，'+failed+' 位沒有存好，請看卡片上的原因':saved+' 位已儲存',failed?'bad':'good');
   render();window.scrollTo(0,0);
  }).catch(function(e){
   picks.forEach(function(s){delete S.saving['card:'+cardId(s)]});
+  storeDrafts();
   setMsg('沒有存好，資料還留在畫面上，請再按一次：'+(e.message||e),'bad');render();window.scrollTo(0,0);
  });
 }
@@ -197,21 +245,21 @@ function renderBar(){
  var show=S.view&&S.tab==='coach'&&S.view.windows.correction.open;
  document.body.className=show?'has-bar':'';
  if(!S.view)return;
- if(!show){if(savingCount())b.appendChild(el('div',{class:'bar muted',text:'儲存中，請先不要關閉這個頁面…'}));return}
+ if(!show)return;
  var ready=0,saving=0,missing=[];
  S.view.staff.forEach(function(s){
   if(S.saving['card:'+cardId(s)]){saving++;return}
   var st=cardState(s);if(st.name==='ready')ready++;if(st.name==='missing')missing.push(s.english+' '+st.what);
  });
  var box=el('div',{class:'bar'});
- if(saving)box.appendChild(el('div',{class:'muted',text:'正在儲存 '+saving+' 位，請先不要關閉這個頁面…'}));
  if(missing.length)box.appendChild(el('div',{class:'muted',text:'還沒填完，這次不會存：'+missing.join('、')}));
- box.appendChild(el('button',{class:'primary',text:ready?'全部儲存（'+ready+' 位）':'沒有要儲存的資料',disabled:!ready,on:{click:saveAll}}));
+ var label=saving&&!ready?'儲存中，請先不要關閉頁面':ready?'全部儲存（'+ready+' 位）':'沒有要儲存的資料';
+ box.appendChild(saving&&!ready?el('button',{class:'primary',disabled:true},el('span',{class:'spin',style:'margin-right:8px'}),label):el('button',{class:'primary',text:label,disabled:!ready,on:{click:saveAll}}));
  b.appendChild(box);
 }
 
 // ---------- visiting / instructor lines ----------
-function blankForm(kind){return {kind:kind,english:'',hours:'',holidayHours:'',withStudents:'',withoutStudents:'',attachments:[],instructor:'',course:'',headcount:'',trainees:'',reason:'',editing:false,uploading:false}}
+function blankForm(kind){return {kind:kind,english:'',hours:'',holidayHours:'',withStudents:'',withoutStudents:'',attachments:[],pending:[],instructor:'',course:'',headcount:'',trainees:'',reason:'',editing:false}}
 function lineSummary(l){
  var p=l.payload||{};
  if(l.kind==='partTime')return '一般 '+p.hours+' 小時，國定假日 '+(p.holidayHours||0)+' 小時';
@@ -220,7 +268,7 @@ function lineSummary(l){
 }
 function lineCard(l){
  var busy=!!S.saving['wd:'+l.key];
- var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:l.english+(l.kind==='partTime'?'（兼職）':'')}),el('span',{class:busy?'badge edit':'badge',text:busy?'撤銷中':'第 '+l.version+' 版'})),
+ var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:l.english+(l.kind==='partTime'?'（兼職）':'')}),busy?el('span',{class:'badge edit'},el('span',{class:'spin',style:'width:11px;height:11px;margin-right:4px;vertical-align:-1px'}),'撤銷中'):el('span',{class:'badge',text:'第 '+l.version+' 版'})),
   el('div',{text:lineSummary(l)}));
  (l.attachments||[]).forEach(function(a){card.appendChild(el('div',{class:'file muted',text:'紙本：'+(a.fileName||a.id)}))});
  if(S.withdrawing===l.key){
@@ -230,7 +278,7 @@ function lineCard(l){
    el('button',{class:'danger',text:'確定撤銷',disabled:busy,on:{click:function(){
     if(!S.withdrawReason.trim()){setMsg('請填撤銷原因','bad');render();window.scrollTo(0,0);return}
     var reason=S.withdrawReason;S.withdrawing=null;S.withdrawReason='';
-    run('wd:'+l.key,function(){return call('portalWithdraw',S.token,S.view.month,l.key,reason)},function(){mergeSaved({removed:[l.key]})},l.english+' 已撤銷');
+    run('wd:'+l.key,function(){return call('portalWithdraw',S.token,S.view.month,l.key,reason)},function(){mergeSaved({removed:[l.key]})},l.english+' 已撤銷','正在撤銷');
    }}})));
  }else if(!busy)card.appendChild(el('div',{class:'row mt'},
   el('button',{class:'link',text:'修改',on:{click:function(){S.form=formFromLine(l);S.withdrawing=null;setMsg('');render()}}}),
@@ -244,12 +292,12 @@ function renderLines(m,kind){
  var marking=!!S.saving['none:'+S.branch];
  if(declared){
   m.appendChild(el('div',{class:'card'},el('div',{class:'row'},el('span',{text:S.branch+' 已標示本月沒有'+label}),
-   el('button',{class:'link danger',text:'取消',disabled:marking,on:{click:function(){run('none:'+S.branch,function(){return call('portalWithdraw',S.token,S.view.month,declared.key,'取消本月沒有')},function(){mergeSaved({removed:[declared.key]})},'已取消標示')}}}))));
+   el('button',{class:'link danger',text:'取消',disabled:marking,on:{click:function(){run('none:'+S.branch,function(){return call('portalWithdraw',S.token,S.view.month,declared.key,'取消本月沒有')},function(){mergeSaved({removed:[declared.key]})},'已取消標示','正在取消')}}}))));
  }else if(!list.length&&!S.form)m.appendChild(el('div',{class:'muted',text:S.branch+' 本月還沒有'+label+'資料。',style:'margin:0 2px 8px'}));
  if(!declared&&!list.length&&!S.form&&kind==='visiting'&&S.view.windows.initial.open){
   m.appendChild(el('button',{class:'mb',text:marking?'處理中…':'本月沒有'+label,disabled:marking,style:'width:100%',on:{click:function(){
    var branch=S.branch;
-   run('none:'+branch,function(){return call('portalSubmit',S.token,S.view.month,{kind:'noneDeclared',branch:branch,english:kind,payload:{}})},mergeSaved,'已標示本月沒有'+label);
+   run('none:'+branch,function(){return call('portalSubmit',S.token,S.view.month,{kind:'noneDeclared',branch:branch,english:kind,payload:{}})},mergeSaved,'已標示本月沒有'+label,'正在儲存');
   }}}));
  }
  if(S.form)m.appendChild(lineForm(S.form));
@@ -264,22 +312,12 @@ function formFromLine(l){
 function field(f,key,label,attrs,scope,after){
  return el('div',{},el('label',{text:label}),el('input',Object.assign({value:f[key],'data-f':(scope||'form')+':'+key,on:{input:function(e){f[key]=e.target.value;if(after)after()}}},attrs||{})));
 }
-// Photos and PDFs go up on their own: the save itself only carries the returned file IDs.
-function attachmentBox(card,f,kind,branch,nameOf,busy){
+// Choosing a file only remembers it; it goes up together with the rest when saved.
+function attachmentBox(card,f,chosen,busy){
  card.appendChild(el('label',{text:'紙本簽到表（相片或 PDF，必填）'}));
  f.attachments.forEach(function(a,i){card.appendChild(el('div',{class:'row file'},el('span',{text:a.fileName||a.id}),el('button',{class:'link danger',text:'移除',disabled:busy,on:{click:function(){f.attachments.splice(i,1);storeDrafts();render()}}})))});
- var named=!!String(nameOf()).trim();
- card.appendChild(el('input',{type:'file',accept:'image/*,application/pdf',disabled:busy||f.uploading||!named,on:{change:function(e){var file=e.target.files[0];if(file)uploadFile(f,kind,branch,nameOf(),file)}}}));
- if(!named)card.appendChild(el('div',{class:'muted',text:'請先填英文名再上傳。'}));
- if(f.uploading)card.appendChild(el('div',{class:'muted',text:'上傳中，請稍候…'}));
-}
-function uploadFile(f,kind,branch,english,file){
- f.uploading=true;
- run('up:'+branch+english+kind,function(){
-  return preparedFile(file).then(function(p){
-   return call('portalUploadAttachment',S.token,S.view.month,{kind:kind,branch:branch,english:String(english).trim(),fileName:p.name,mime:p.mime,base64:p.base64});
-  }).then(function(a){f.uploading=false;if(!f.attachments.some(function(x){return x.id===a.id}))f.attachments.push(a);storeDrafts()},function(e){f.uploading=false;throw e});
- });
+ chosen.forEach(function(file,i){card.appendChild(el('div',{class:'row file'},el('span',{class:'pendingFile',text:file.name+'（尚未送出）'}),el('button',{class:'link danger',text:'移除',disabled:busy,on:{click:function(){chosen.splice(i,1);render()}}})))});
+ card.appendChild(el('input',{type:'file',accept:'image/*,application/pdf',disabled:busy,on:{change:function(e){var file=e.target.files[0];if(file){chosen.push(file);storeDrafts();render()}}}}));
 }
 function lineForm(f){
  var busy=!!S.saving['form'],card=el('div',{class:'card'},el('h3',{text:(f.editing?'修改 ':'新增 ')+LABELS[f.kind]}));
@@ -296,22 +334,13 @@ function lineForm(f){
   card.appendChild(field(f,'english','英文名',{disabled:locked,autocapitalize:'off'},'form',null));
   if(f.kind==='partTime')card.appendChild(el('div',{class:'two'},field(f,'hours','一般工時（小時）',{type:'number',inputMode:'decimal',step:'0.5',min:'0',disabled:busy}),field(f,'holidayHours','國定假日工時',{type:'number',inputMode:'decimal',step:'0.5',min:'0',disabled:busy})));
   else card.appendChild(el('div',{class:'two'},field(f,'withStudents','有學員出席（堂）',{type:'number',inputMode:'numeric',step:'1',min:'0',disabled:busy}),field(f,'withoutStudents','無學員出席（堂）',{type:'number',inputMode:'numeric',step:'1',min:'0',disabled:busy})));
-  attachmentBoxForm(card,f,busy);
+  attachmentBox(card,f,f.pending,busy);
  }
  if(f.editing)card.appendChild(field(f,'reason','修改原因（必填）',{disabled:busy}));
  card.appendChild(el('div',{class:'two mt'},
   el('button',{text:'取消',disabled:busy,on:{click:function(){S.form=null;setMsg('');render()}}}),
-  el('button',{class:'primary',text:busy?'儲存中…':'送出',disabled:busy||f.uploading,on:{click:function(){submitForm(f)}}})));
+  el('button',{class:'primary',text:busy?'儲存中，請稍候…':'送出',disabled:busy,on:{click:function(){submitForm(f)}}})));
  return card;
-}
-// The name is typed in this form, so the upload box has to wake up as soon as it is filled in.
-function attachmentBoxForm(card,f,busy){
- var slot=el('div',{});card.appendChild(slot);
- attachmentBox(slot,f,f.kind,S.branch,function(){return f.english},busy);
- var name=card.querySelector('[data-f="form:english"]');
- if(name)name.addEventListener('input',function(){
-  var box=slot.querySelector('input[type=file]');if(box)box.disabled=busy||f.uploading||!f.english.trim();
- });
 }
 function submitForm(f){
  var payload,english=f.english.trim(),branch=S.branch;
@@ -320,8 +349,14 @@ function submitForm(f){
  if(f.kind==='visiting')payload={withStudents:Number(f.withStudents),withoutStudents:Number(f.withoutStudents),attachmentIds:ids};
  if(f.kind==='instructor'){english=f.instructor.trim();payload={instructor:english,course:f.course.trim(),hours:Number(f.hours),headcount:Number(f.headcount),trainees:f.trainees.trim()}}
  if((f.kind==='partTime'&&f.hours==='')||(f.kind==='visiting'&&(f.withStudents===''||f.withoutStudents===''))||(f.kind==='instructor'&&(f.hours===''||f.headcount===''))){setMsg('請填完數字欄位','bad');render();window.scrollTo(0,0);return}
- run('form',function(){return call('portalSubmit',S.token,S.view.month,{kind:f.kind,branch:branch,english:english,payload:payload,reason:f.editing?f.reason:undefined})},
-  function(r){mergeSaved(r);S.form=null},english+' 已送出');
+ var hasPhotos=(f.pending||[]).length>0;
+ run('form',function(){
+  return Promise.all((f.pending||[]).map(preparedFile)).then(function(files){
+   if(hasPhotos){S.phase='正在上傳相片並儲存';refreshBusy()}
+   return call('portalSubmit',S.token,S.view.month,{kind:f.kind,branch:branch,english:english,payload:payload,reason:f.editing?f.reason:undefined,
+    files:files.map(function(p){return {fileName:p.name,mime:p.mime,base64:p.base64}})});
+  });
+ },function(r){mergeSaved(r);S.form=null},english+' 已送出',hasPhotos?'正在處理相片':'正在儲存');
 }
 // Phone photos are shrunk (longest side 2200 px, still readable) so uploads stay quick on mobile data; PDFs and anything the browser can't decode go as they are.
 function preparedFile(file){
@@ -360,7 +395,7 @@ function render(){
  TABS.forEach(function(t){tabs.appendChild(el('button',{class:'tab'+(t[0]===S.tab?' on':''),text:t[1],on:{click:function(){S.tab=t[0];S.form=null;S.withdrawing=null;setMsg('');render()}}}))});
  m.appendChild(tabs);
  if(S.tab==='coach')renderCoach(m);else renderLines(m,S.tab);
- renderBar();
+ renderBar();refreshBusy();
  if(focusId){
   var again=m.querySelector('[data-f="'+focusId.replace(/"/g,'')+'"]');
   if(again){again.focus();if(caret!==null)try{again.setSelectionRange(caret,caret)}catch(e){}}
@@ -374,7 +409,7 @@ else{step='liff.init';liff.init({liffId:LIFF_ID}).then(function(){
  step='取得 ID token';var token=liff.getIDToken();
  if(!token)throw Error('沒有 ID token，請確認 LIFF Scopes 有勾 openid');
  S.token=token;
- step='讀取資料';show('正在讀取資料…');
+ step='讀取資料';showStep('正在讀取資料…');
  return call('portalHome',token).then(function(h){
   done=true;clearTimeout(timer);
   show(h.english+'｜'+h.month.replace('-','年')+'月計薪資料'+(h.basisReady===false?'（管理員尚未產生計薪依據）':''));
