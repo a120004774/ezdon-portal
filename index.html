@@ -22,11 +22,13 @@ button.danger{color:var(--err)}
 .chip{border-radius:999px;padding:6px 16px;min-height:38px}.chip.on{background:var(--text);border-color:var(--text);color:#fff}
 .tab{border:0;background:none;padding:8px 2px;font-size:14px;min-height:40px}.tab.on{background:var(--card);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.1)}
 .seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;width:172px;flex:none}
-.seg.wide{width:100%;margin:10px 0 2px}
+.choice{display:flex;flex-wrap:wrap;align-items:center;gap:4px 18px;margin:10px 0 6px}
+.choice label{display:flex;align-items:center;gap:8px;margin:0;min-height:40px;font-size:16px;color:var(--text);cursor:pointer}
+.choice label.on{font-weight:600}
+.choice input{width:22px;height:22px;min-height:0;margin:0;padding:0;flex:none;accent-color:var(--accent)}
 .seg button{padding:6px 2px;min-height:38px;font-size:14px}
 .seg button.pass{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
 .seg button.fail{background:var(--err-soft);border-color:var(--err);color:var(--err);font-weight:600}
-.seg button.pick{background:var(--text);border-color:var(--text);color:#fff;font-weight:600}
 .item{padding:8px 0;border-top:1px solid var(--line)}
 label{display:block;font-size:14px;color:var(--muted);margin:10px 0 4px}
 input{font:inherit;width:100%;padding:10px;border:1px solid #d0d5dd;border-radius:8px;background:#fff;color:var(--text);min-height:44px}
@@ -164,9 +166,10 @@ function coachCard(s){
  if(S.errors[id])card.appendChild(el('div',{class:'err',text:S.errors[id],style:'font-size:14px;margin-top:4px'}));
  var pick=function(field,value){return function(){d[field]=value;delete S.errors[id];storeDrafts();render()}};
  if(s.title==='教練'){
-  card.appendChild(el('div',{class:'seg wide'},
-   el('button',{class:d.type==='fullTime'?'pick':'',text:'全職教練',disabled:busy,on:{click:pick('type','fullTime')}}),
-   el('button',{class:d.type==='partTime'?'pick':'',text:'兼職教練',disabled:busy,on:{click:pick('type','partTime')}})));
+  // One or the other: only the chosen kind's fields are shown, so it never looks like both need filling in.
+  var option=function(value,text){return el('label',{class:d.type===value?'on':''},
+   el('input',{type:'radio',name:'kind:'+id,checked:d.type===value,disabled:busy,on:{change:pick('type',value)}}),text)};
+  card.appendChild(el('div',{class:'choice'},option('fullTime','全職教練'),option('partTime','兼職教練')));
  }else card.appendChild(el('div',{class:'muted',text:'副理只有在分店虧損時才依考核計算，平常仍請填寫。'}));
  if(d.type==='fullTime'){
   EVAL_ITEMS.forEach(function(i){
