@@ -106,7 +106,7 @@ function evalPayload(v){
 function evalKey(v){return JSON.stringify(EVAL_ITEMS.map(function(i){return [v[i[0]]||'',v[i[0]]==='不合格'?failReason(v,i[0]):'']}))}
 var TABS=[['coach','教練'],['visiting','跑課'],['instructor','教官'],['mine','我的確認']];
 var LABELS={partTime:'兼職教練',visiting:'跑課老師',instructor:'教官課程'};
-var S={boss:null,tokenInput:'',me:null,lateInput:'',token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
+var S={progress:null,boss:null,tokenInput:'',me:null,lateInput:'',token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
 function picked(id){return S.picked[id]||(S.picked[id]=[])}
 function refreshBusy(){
  var n=savingCount(),box=document.getElementById('busy');
@@ -313,13 +313,13 @@ function lineCard(l){
 function renderLines(m,kind){
  var label=LABELS[kind],list=linesOf(kind);
  list.forEach(function(l){m.appendChild(lineCard(l))});
- var declared=kind==='visiting'?S.view.lines.filter(function(l){return l.kind==='noneDeclared'&&l.branch===S.branch&&l.english===kind})[0]:null;
+ var declared=S.view.lines.filter(function(l){return l.kind==='noneDeclared'&&l.branch===S.branch&&l.english===kind})[0];
  var marking=!!S.saving['none:'+S.branch];
  if(declared){
   m.appendChild(el('div',{class:'card'},el('div',{class:'row'},el('span',{text:S.branch+' 已標示本月沒有'+label}),
    el('button',{class:'link danger',text:'取消',disabled:marking,on:{click:function(){run('none:'+S.branch,function(){return call('portalWithdraw',S.token,S.view.month,declared.key,'取消本月沒有')},function(){mergeSaved({removed:[declared.key]})},'已取消標示','正在取消')}}}))));
  }else if(!list.length&&!S.form)m.appendChild(el('div',{class:'muted',text:S.branch+' 本月還沒有'+label+'資料。',style:'margin:0 2px 8px'}));
- if(!declared&&!list.length&&!S.form&&kind==='visiting'&&S.view.windows.initial.open){
+ if(!declared&&!list.length&&!S.form&&S.view.windows.initial.open){
   m.appendChild(el('button',{class:'mb',text:marking?'處理中…':'本月沒有'+label,disabled:marking,style:'width:100%',on:{click:function(){
    var branch=S.branch;
    run('none:'+branch,function(){return call('portalSubmit',S.token,S.view.month,{kind:'noneDeclared',branch:branch,english:kind,payload:{}})},mergeSaved,'已標示本月沒有'+label,'正在儲存');
@@ -397,7 +397,41 @@ function itemRows(it){
  if(it.item==='managerRevenue')(v.branches||[]).forEach(function(x){r.push([x.branch,x.revenue===null?'尚無資料':money(x.revenue)])});
  return r;
 }
-// ---------- the owner's settings page ----------
+// ---------- the owner's page: watch managers on the 1st–3rd ----------
+var BOSS_TABS=[['progress','經理申報進度'],['boss','通知設定']];
+function bossTabs(m){
+ var tabs=el('div',{class:'tabs',style:'grid-template-columns:repeat(2,1fr)'});
+ BOSS_TABS.forEach(function(t){tabs.appendChild(el('button',{class:'tab'+(t[0]===S.tab?' on':''),text:t[1],on:{click:function(){S.tab=t[0];setMsg('');render()}}}))});
+ m.appendChild(tabs);
+}
+function renderProgress(m){
+ var p=S.progress;
+ m.appendChild(el('div',{class:'row mb'},el('b',{text:Number(p.month.slice(5))+' 月薪資，'+localTime(p.deadline)+' 截止'}),
+  el('button',{class:'link',text:'重新整理',disabled:!!S.saving.progress,on:{click:function(){run('progress',function(){return call('portalBossProgress',S.token)},function(r){S.progress=r},null,'正在讀取進度')}}})));
+ var waiting=p.managers.filter(function(x){return !x.done});
+ m.appendChild(el('div',{class:'notice '+(!waiting.length?'good':p.late?'bad':'warn'),text:!waiting.length?'經理都完成了，教練和副理可以接著確認。':(p.late?'已過截止時間，':'')+'還沒完成：'+waiting.map(function(x){return x.english}).join('、')+'。沒完成的話，教練和副理無法接著確認。'}));
+ if(!p.basisReady)m.appendChild(el('div',{class:'notice warn',text:'本月計薪依據還沒產生，經理暫時無法確認營業額。'}));
+ var CONFIRM={confirmed:'已確認',pending:'未確認',stale:'資料更新，要重新確認',overdue:'逾期',noBasis:'還不能確認'},STATE={fullTime:'全職，已填',partTime:'兼職，已填',missing:'未填'};
+ p.managers.forEach(function(x){
+  var c=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:x.english}),el('span',{class:x.done?'badge':'badge edit',text:x.done?'已完成':'未完成'})));
+  if(!x.bound)c.appendChild(el('div',{class:'err',style:'font-size:14px',text:'尚未綁定 LINE，收不到通知。'}));
+  var row=function(l,v,bad){c.appendChild(el('div',{class:'kv'},el('span',{text:l}),el('b',{text:String(v),class:bad?'err':''})))};
+  row('營業額確認',CONFIRM[x.revenue]||x.revenue,x.revenue!=='confirmed');
+  row('上課統計確認',CONFIRM[x.stats]||x.stats,x.stats!=='confirmed');
+  x.branches.forEach(function(b){
+   c.appendChild(el('div',{style:'font-weight:600;margin-top:10px',text:b.branch}));
+   b.coaches.forEach(function(k){row(k.english+'（'+k.title+'）',STATE[k.state],k.state==='missing')});
+   if(b.otherPartTime.length)row('其他兼職',b.otherPartTime.join('、'));
+   var visitingMissing=!b.visitingNone&&!b.visiting;
+   row('跑課',b.visitingNone?'本月沒有':b.visiting?b.visiting+' 位':'未填',visitingMissing);
+   row('教官課程',b.instructorNone?'本月沒有':b.instructors?b.instructors+' 筆':'未填',!b.instructorNone&&!b.instructors);
+  });
+  m.appendChild(c);
+ });
+ if(p.notBound.length)m.appendChild(el('div',{class:'notice bad',text:'尚未綁定 LINE：'+p.notBound.join('、')}));
+ m.appendChild(el('div',{class:'muted',style:'margin:0 2px',text:'教練和副理什麼時候確認不用管，6 日過後系統會自動視為已確認。7 日起請到電腦版薪資系統作業。'}));
+}
+// ---------- the owner's notification settings ----------
 function renderBoss(m){
  var b=S.boss,busy=!!S.saving.boss;
  var tokenCard=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:'LINE 權杖'}),el('span',{class:b.tokenSet?'badge':'badge todo',text:b.tokenSet?'已設定':'未設定'})));
@@ -422,7 +456,6 @@ function renderBoss(m){
   run('boss',function(){return call('portalBossSetTrigger',S.token,on)},function(r){S.boss=r},on?'已開啟自動通知':'已關閉自動通知',on?'正在開啟':'正在關閉');
  }}}));
  m.appendChild(sched);
- m.appendChild(el('div',{class:'muted',style:'margin:0 2px',text:'申報追蹤與紙本審核請到電腦版薪資系統。'}));
 }
 function mineLateChanged(){var me=S.me;return me.needsLate&&me.lateWindow.open&&S.lateInput.trim()!==''&&(!me.late||Number(S.lateInput)!==me.late.minutes)}
 function mineTodo(){return S.me.items.filter(function(i){return i.confirmable&&i.status.status!=='confirmed'})}
@@ -515,7 +548,8 @@ function render(){
    render()}}}))});
   m.appendChild(tabs);
  }
- if(S.tab==='boss')renderBoss(m);else if(S.tab==='mine')renderMine(m);else if(S.tab==='coach')renderCoach(m);else renderLines(m,S.tab);
+ if(S.boss)bossTabs(m);
+ if(S.tab==='progress')renderProgress(m);else if(S.tab==='boss')renderBoss(m);else if(S.tab==='mine')renderMine(m);else if(S.tab==='coach')renderCoach(m);else renderLines(m,S.tab);
  renderBar();refreshBusy();
  if(focusId){
   var again=m.querySelector('[data-f="'+focusId.replace(/"/g,'')+'"]');
@@ -535,7 +569,7 @@ else{step='liff.init';liff.init({liffId:LIFF_ID}).then(function(){
   done=true;clearTimeout(timer);
   show(h.english+'｜'+h.month.replace('-','年')+'月計薪資料'+(h.basisReady===false?'（管理員尚未產生計薪依據）':''));
   window.PORTAL={token:token,home:h};
-  if(h.boss){show(h.english+'｜通知設定');S.tab='boss';S.boss=h.boss;render();return}
+  if(h.boss){show(h.english+'｜老闆');S.tab='progress';S.boss=h.boss;S.progress=h.progress;render();return}
   if(h.manager){
    S.view=h.manager;S.branch=h.manager.branches[0]||'';S.storeKey='ezdon_drafts_'+h.month+'_'+h.english;
    loadDrafts();render();
