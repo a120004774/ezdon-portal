@@ -2,12 +2,38 @@
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>一起動計薪確認</title>
 <style>
-body{font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;margin:0;padding:16px;background:#f6f7f9;color:#1d2433}
-.card{background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
-.muted{color:#667085;font-size:14px}.err{color:#b42318}
+:root{--bg:#f6f7f9;--card:#fff;--text:#1d2433;--muted:#667085;--line:#e4e7ec;--accent:#0f7b5f;--accent-soft:#e6f4f0;--err:#b42318;--err-soft:#fef3f2;--warn:#93600a;--warn-soft:#fdf6e3}
+*{box-sizing:border-box}
+body{font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;margin:0;padding:12px 12px 32px;background:var(--bg);color:var(--text);font-size:16px;line-height:1.45}
+h2{font-size:20px;margin:0 0 4px}h3{font-size:16px;margin:0}
+.card{background:var(--card);border-radius:12px;padding:14px;margin-bottom:10px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.muted{color:var(--muted);font-size:14px}.err{color:var(--err)}
+.notice{border-radius:10px;padding:10px 12px;margin-bottom:10px;font-size:14px}
+.notice.warn{background:var(--warn-soft);color:var(--warn)}.notice.bad{background:var(--err-soft);color:var(--err)}.notice.good{background:var(--accent-soft);color:var(--accent)}
+.row{display:flex;align-items:center;justify-content:space-between;gap:8px}
+.chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:#eaecf0;border-radius:10px;padding:4px;margin-bottom:10px}
+button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:8px;padding:9px 12px;min-height:42px;cursor:pointer}
+button:disabled{opacity:.5}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;width:100%}
+button.link{border:0;background:none;color:var(--accent);padding:6px 4px;min-height:34px;font-size:14px}
+button.danger{color:var(--err)}
+.chip{border-radius:999px;padding:6px 16px;min-height:38px}.chip.on{background:var(--text);border-color:var(--text);color:#fff}
+.tab{border:0;background:none;padding:8px 2px;font-size:14px;min-height:40px}.tab.on{background:var(--card);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.1)}
+.seg{display:grid;grid-template-columns:1fr 1fr;gap:4px;width:172px;flex:none}
+.seg button{padding:6px 2px;min-height:38px;font-size:14px}
+.seg button.pass{background:var(--accent-soft);border-color:var(--accent);color:var(--accent);font-weight:600}
+.seg button.fail{background:var(--err-soft);border-color:var(--err);color:var(--err);font-weight:600}
+.item{padding:8px 0;border-top:1px solid var(--line)}
+label{display:block;font-size:14px;color:var(--muted);margin:10px 0 4px}
+input{font:inherit;width:100%;padding:10px;border:1px solid #d0d5dd;border-radius:8px;background:#fff;color:var(--text);min-height:44px}
+input:disabled{background:#f2f4f7;color:var(--muted)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.mt{margin-top:12px}.badge{font-size:12px;border-radius:999px;padding:2px 8px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}.badge.todo{background:#f2f4f7;color:var(--muted)}
+.file{font-size:14px;padding:6px 0;word-break:break-all}
 </style></head>
 <body>
-<div class="card"><h2 style="margin:0 0 8px">一起動計薪確認</h2><div id="who" class="muted">正在確認 LINE 身分…</div></div>
+<div class="card"><h2>一起動計薪確認</h2><div id="who" class="muted">正在確認 LINE 身分…</div></div>
 <div id="main"></div>
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
@@ -24,16 +50,211 @@ function show(text,isErr){var d=document.getElementById('who');d.textContent=tex
 var step='載入 LINE SDK',done=false;
 var timer=setTimeout(function(){if(!done)show('逾時，停在：'+step,true)},30000);
 function fail(e){done=true;clearTimeout(timer);show('錯誤（'+step+'）：'+(e&&e.message||e),true)}
+
+// ---------- small DOM helper: text always goes through textContent, so names typed by people can't inject markup ----------
+function el(tag,attrs){
+ var n=document.createElement(tag);
+ Object.keys(attrs||{}).forEach(function(k){
+  if(k==='on')Object.keys(attrs.on).forEach(function(e){n.addEventListener(e,attrs.on[e])});
+  else if(k==='class')n.className=attrs[k];
+  else if(k==='text')n.textContent=attrs[k];
+  else if(attrs[k]===false||attrs[k]===undefined||attrs[k]===null){}
+  else if(k in n&&k!=='list')n[k]=attrs[k];
+  else n.setAttribute(k,attrs[k]);
+ });
+ [].slice.call(arguments,2).forEach(function(c){if(c)n.appendChild(typeof c==='string'?document.createTextNode(c):c)});
+ return n;
+}
+// Always Taipei time, whatever the phone is set to (deadlines must read the same for everyone).
+function localTime(iso){var d=new Date(Date.parse(iso)+8*3600e3);return isNaN(d)?'':(d.getUTCMonth()+1)+'/'+d.getUTCDate()+' '+('0'+d.getUTCHours()).slice(-2)+':'+('0'+d.getUTCMinutes()).slice(-2)}
+
+// ---------- manager screen ----------
+var EVAL_ITEMS=[['admin','行政考核'],['execution','執行考核'],['target','經理指定目標']];
+var TABS=[['evaluation','三項考核'],['partTime','兼職'],['visiting','跑課'],['instructor','教官']];
+var S={token:'',view:null,branch:'',tab:'evaluation',drafts:{},form:null,busy:false,msg:null,withdrawing:null,withdrawReason:''};
+function blankForm(kind){return {kind:kind,english:'',hours:'',holidayHours:'',withStudents:'',withoutStudents:'',attachments:[],instructor:'',course:'',headcount:'',trainees:'',reason:'',editing:false,uploading:false}}
+function linesOf(kind){return S.view.lines.filter(function(l){return l.kind===kind&&l.branch===S.branch})}
+function evalLine(english){return linesOf('evaluation').filter(function(l){return l.english.toLowerCase()===english.toLowerCase()})[0]}
+function branchStaff(){return S.view.staff.filter(function(s){return s.branch===S.branch})}
+function setMsg(text,kind){S.msg=text?{text:text,kind:kind||'good'}:null}
+function act(promise,okText){
+ S.busy=true;setMsg('');render();
+ return promise.then(function(){return call('portalManagerView',S.token,S.view.month)}).then(function(v){S.view=v;setMsg(okText);S.busy=false;render();return true})
+  .catch(function(e){S.busy=false;setMsg(e.message||String(e),'bad');render();window.scrollTo(0,0);return false});
+}
+function render(){
+ var m=document.getElementById('main'),v=S.view;m.textContent='';
+ var w=v.windows;
+ if(!w.correction.open)m.appendChild(el('div',{class:'notice bad',text:'目前不能填報：'+w.correction.reason}));
+ else if(!w.initial.open)m.appendChild(el('div',{class:'notice warn',text:w.initial.reason+'。已送出的資料還可以修改，要新增請聯絡管理員。'}));
+ else m.appendChild(el('div',{class:'notice warn',text:'請在 '+localTime(v.cycle.managerDeadline)+' 前填完。'}));
+ if(S.msg)m.appendChild(el('div',{class:'notice '+(S.msg.kind==='bad'?'bad':'good'),text:S.msg.text}));
+ if(v.branches.length>1){
+  var chips=el('div',{class:'chips'});
+  v.branches.forEach(function(b){chips.appendChild(el('button',{class:'chip'+(b===S.branch?' on':''),text:b,on:{click:function(){S.branch=b;S.form=null;S.withdrawing=null;setMsg('');render()}}}))});
+  m.appendChild(chips);
+ }
+ var tabs=el('div',{class:'tabs'});
+ TABS.forEach(function(t){tabs.appendChild(el('button',{class:'tab'+(t[0]===S.tab?' on':''),text:t[1],on:{click:function(){S.tab=t[0];S.form=null;S.withdrawing=null;setMsg('');render()}}}))});
+ m.appendChild(tabs);
+ if(S.tab==='evaluation')renderEvaluation(m);else renderLines(m,S.tab);
+}
+function renderEvaluation(m){
+ var staff=branchStaff();
+ if(!staff.length){m.appendChild(el('div',{class:'card muted',text:S.branch+' 沒有全職教練或副理。'}));return}
+ var doneCount=staff.filter(function(s){return !!evalLine(s.english)}).length;
+ m.appendChild(el('div',{class:'muted',text:S.branch+'：已填 '+doneCount+' / '+staff.length+' 人',style:'margin:0 2px 8px'}));
+ staff.forEach(function(s){m.appendChild(evaluationCard(s))});
+}
+function evaluationCard(s){
+ var line=evalLine(s.english),key=S.branch+'|'+s.english;
+ var draft=S.drafts[key]||(S.drafts[key]={values:line?Object.assign({},line.payload):{},reason:''});
+ var changed=line&&EVAL_ITEMS.some(function(i){return draft.values[i[0]]!==line.payload[i[0]]});
+ var complete=EVAL_ITEMS.every(function(i){return !!draft.values[i[0]]});
+ var card=el('div',{class:'card'},
+  el('div',{class:'row'},el('h3',{text:s.english+'（'+s.title+'）'}),line?el('span',{class:'badge',text:changed?'未儲存':'已填'}):el('span',{class:'badge todo',text:'未填'})));
+ if(s.title==='副理')card.appendChild(el('div',{class:'muted',text:'副理只有在分店虧損時才依考核計算，平常仍請填寫。'}));
+ EVAL_ITEMS.forEach(function(i){
+  var val=draft.values[i[0]];
+  var pick=function(x){return function(){draft.values[i[0]]=x;render()}};
+  card.appendChild(el('div',{class:'item row'},el('span',{text:i[1]}),el('div',{class:'seg'},
+   el('button',{class:val==='合格'?'pass':'',text:'合格',disabled:S.busy,on:{click:pick('合格')}}),
+   el('button',{class:val==='不合格'?'fail':'',text:'不合格',disabled:S.busy,on:{click:pick('不合格')}}))));
+ });
+ if(changed){
+  card.appendChild(el('label',{text:'修改原因（必填）'}));
+  card.appendChild(el('input',{value:draft.reason,on:{input:function(e){draft.reason=e.target.value}}}));
+ }
+ if(!line||changed){
+  card.appendChild(el('button',{class:'primary mt',text:line?'儲存修改':'儲存',disabled:S.busy||!complete,on:{click:function(){
+   act(call('portalSubmit',S.token,S.view.month,{kind:'evaluation',branch:S.branch,english:s.english,payload:draft.values,reason:line?draft.reason:undefined}),s.english+' 已儲存').then(function(ok){if(ok)delete S.drafts[key];render()});
+  }}}));
+ }else card.appendChild(el('div',{class:'muted mt',text:'第 '+line.version+' 版，'+localTime(line.submittedAt)+' 儲存'}));
+ return card;
+}
+function lineSummary(l){
+ var p=l.payload||{};
+ if(l.kind==='partTime')return '一般 '+p.hours+' 小時，國定假日 '+(p.holidayHours||0)+' 小時';
+ if(l.kind==='visiting')return '有學員 '+p.withStudents+' 堂，無學員 '+p.withoutStudents+' 堂';
+ return p.course+'：'+p.hours+' 小時，收費 '+p.headcount+' 人'+(p.trainees?'，受訓 '+p.trainees:'');
+}
+function renderLines(m,kind){
+ var label={partTime:'兼職教練',visiting:'跑課老師',instructor:'教官課程'}[kind],list=linesOf(kind);
+ list.forEach(function(l){
+  var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:l.english}),el('span',{class:'badge',text:'第 '+l.version+' 版'})),
+   el('div',{text:lineSummary(l)}));
+  (l.attachments||[]).forEach(function(a){card.appendChild(el('div',{class:'file muted',text:'紙本：'+(a.fileName||a.id)}))});
+  if(S.withdrawing===l.key){
+   card.appendChild(el('label',{text:'撤銷原因（必填）'}));
+   card.appendChild(el('input',{value:S.withdrawReason,on:{input:function(e){S.withdrawReason=e.target.value}}}));
+   card.appendChild(el('div',{class:'two mt'},
+    el('button',{text:'取消',disabled:S.busy,on:{click:function(){S.withdrawing=null;render()}}}),
+    el('button',{class:'danger',text:'確定撤銷',disabled:S.busy,on:{click:function(){
+     act(call('portalWithdraw',S.token,S.view.month,l.key,S.withdrawReason),l.english+' 已撤銷').then(function(ok){if(ok){S.withdrawing=null;S.withdrawReason='';render()}});
+    }}})));
+  }else card.appendChild(el('div',{class:'row mt'},
+   el('button',{class:'link',text:'修改',disabled:S.busy,on:{click:function(){S.form=formFromLine(l);S.withdrawing=null;setMsg('');render()}}}),
+   el('button',{class:'link danger',text:'撤銷',disabled:S.busy,on:{click:function(){S.withdrawing=l.key;S.withdrawReason='';S.form=null;setMsg('');render()}}})));
+  m.appendChild(card);
+ });
+ if(!list.length&&!S.form)m.appendChild(el('div',{class:'muted',text:S.branch+' 本月還沒有'+label+'資料。',style:'margin:0 2px 8px'}));
+ if(S.form)m.appendChild(lineForm(S.form));
+ else if(S.view.windows.initial.open)m.appendChild(el('button',{class:'primary',text:'新增'+label,disabled:S.busy,on:{click:function(){S.form=blankForm(kind);S.withdrawing=null;setMsg('');render()}}}));
+}
+function formFromLine(l){
+ var f=blankForm(l.kind),p=l.payload||{};
+ f.editing=true;f.english=l.english;f.attachments=(l.attachments||[]).slice();
+ ['hours','holidayHours','withStudents','withoutStudents','course','headcount','trainees','instructor'].forEach(function(k){if(p[k]!==undefined)f[k]=String(p[k])});
+ return f;
+}
+function field(f,key,label,attrs){
+ return el('div',{},el('label',{text:label}),el('input',Object.assign({value:f[key],on:{input:function(e){f[key]=e.target.value}}},attrs||{})));
+}
+function lineForm(f){
+ var card=el('div',{class:'card'},el('h3',{text:(f.editing?'修改 ':'新增 ')+{partTime:'兼職教練',visiting:'跑課老師',instructor:'教官課程'}[f.kind]}));
+ var locked=f.editing;
+ if(f.kind==='instructor'){
+  var names=el('datalist',{id:'coachNames'});
+  S.view.staff.forEach(function(s){names.appendChild(el('option',{value:s.english}))});
+  card.appendChild(names);
+  card.appendChild(field(f,'instructor','教官（英文名）',{disabled:locked,list:'coachNames',autocapitalize:'off'}));
+  card.appendChild(field(f,'course','課程名稱',{disabled:locked}));
+  card.appendChild(el('div',{class:'two'},field(f,'hours','開課時數',{type:'number',inputMode:'decimal',step:'0.5',min:'0'}),field(f,'headcount','收費人數',{type:'number',inputMode:'numeric',step:'1',min:'1'})));
+  card.appendChild(field(f,'trainees','受訓教練（選填）'));
+ }else{
+  card.appendChild(field(f,'english','英文名',{disabled:locked,autocapitalize:'off',on:{input:function(e){f.english=e.target.value;var up=document.getElementById('uploadBox');if(up)up.disabled=!f.english.trim()}}}));
+  if(f.kind==='partTime')card.appendChild(el('div',{class:'two'},field(f,'hours','一般工時（小時）',{type:'number',inputMode:'decimal',step:'0.5',min:'0'}),field(f,'holidayHours','國定假日工時',{type:'number',inputMode:'decimal',step:'0.5',min:'0'})));
+  else card.appendChild(el('div',{class:'two'},field(f,'withStudents','有學員出席（堂）',{type:'number',inputMode:'numeric',step:'1',min:'0'}),field(f,'withoutStudents','無學員出席（堂）',{type:'number',inputMode:'numeric',step:'1',min:'0'})));
+  card.appendChild(el('label',{text:'紙本簽到表（相片或 PDF，必填）'}));
+  f.attachments.forEach(function(a,i){card.appendChild(el('div',{class:'row file'},el('span',{text:a.fileName||a.id}),el('button',{class:'link danger',text:'移除',disabled:S.busy,on:{click:function(){f.attachments.splice(i,1);render()}}})))});
+  card.appendChild(el('input',{id:'uploadBox',type:'file',accept:'image/*,application/pdf',disabled:S.busy||!f.english.trim(),on:{change:function(e){var file=e.target.files[0];if(file)uploadFile(f,file)}}}));
+  if(!f.english.trim())card.appendChild(el('div',{class:'muted',text:'請先填英文名再上傳。'}));
+  if(f.uploading)card.appendChild(el('div',{class:'muted',text:'上傳中，請稍候…'}));
+ }
+ if(f.editing){card.appendChild(el('label',{text:'修改原因（必填）'}));card.appendChild(el('input',{value:f.reason,on:{input:function(e){f.reason=e.target.value}}}))}
+ card.appendChild(el('div',{class:'two mt'},
+  el('button',{text:'取消',disabled:S.busy,on:{click:function(){S.form=null;setMsg('');render()}}}),
+  el('button',{class:'primary',text:S.busy?'處理中…':'送出',disabled:S.busy,on:{click:function(){submitForm(f)}}})));
+ return card;
+}
+function submitForm(f){
+ var payload,english=f.english.trim();
+ if(f.kind==='partTime')payload={hours:Number(f.hours),holidayHours:Number(f.holidayHours||0),attachmentIds:f.attachments.map(function(a){return a.id})};
+ if(f.kind==='visiting')payload={withStudents:Number(f.withStudents),withoutStudents:Number(f.withoutStudents),attachmentIds:f.attachments.map(function(a){return a.id})};
+ if(f.kind==='instructor'){english=f.instructor.trim();payload={instructor:english,course:f.course.trim(),hours:Number(f.hours),headcount:Number(f.headcount),trainees:f.trainees.trim()}}
+ if((f.kind==='partTime'&&f.hours==='')||(f.kind==='visiting'&&(f.withStudents===''||f.withoutStudents===''))||(f.kind==='instructor'&&(f.hours===''||f.headcount===''))){setMsg('請填完數字欄位','bad');render();window.scrollTo(0,0);return}
+ act(call('portalSubmit',S.token,S.view.month,{kind:f.kind,branch:S.branch,english:english,payload:payload,reason:f.editing?f.reason:undefined}),english+' 已送出').then(function(ok){if(ok){S.form=null;render()}});
+}
+function uploadFile(f,file){
+ f.uploading=true;S.busy=true;setMsg('');render();
+ preparedFile(file).then(function(p){
+  return call('portalUploadAttachment',S.token,S.view.month,{kind:f.kind,branch:S.branch,english:f.english.trim(),fileName:p.name,mime:p.mime,base64:p.base64});
+ }).then(function(a){
+  if(!f.attachments.some(function(x){return x.id===a.id}))f.attachments.push(a);
+  f.uploading=false;S.busy=false;render();
+ }).catch(function(e){f.uploading=false;S.busy=false;setMsg(e.message||String(e),'bad');render();window.scrollTo(0,0)});
+}
+// Phone photos are shrunk (longest side 2200 px, still readable) so uploads stay quick on mobile data; PDFs and anything the browser can't decode go as they are.
+function preparedFile(file){
+ var raw=function(){return new Promise(function(ok,no){var r=new FileReader();r.onerror=function(){no(Error('讀不到這個檔案'))};
+  r.onload=function(){ok({name:file.name,mime:file.type,base64:String(r.result).split(',')[1]||''})};r.readAsDataURL(file)})};
+ if(!/^image\//.test(file.type))return raw();
+ return new Promise(function(ok){
+  var url=URL.createObjectURL(file),img=new Image();
+  img.onerror=function(){URL.revokeObjectURL(url);ok(raw())};
+  img.onload=function(){
+   var scale=Math.min(1,2200/Math.max(img.width,img.height)),c=document.createElement('canvas');
+   c.width=Math.round(img.width*scale);c.height=Math.round(img.height*scale);
+   c.getContext('2d').drawImage(img,0,0,c.width,c.height);URL.revokeObjectURL(url);
+   var data=c.toDataURL('image/jpeg',0.85);
+   if(data.indexOf('data:image/jpeg')!==0){ok(raw());return}
+   ok({name:file.name.replace(/\.[^.]+$/,'')+'.jpg',mime:'image/jpeg',base64:data.split(',')[1]});
+  };
+  img.src=url;
+ });
+}
+
+// ---------- start ----------
+function startManager(h){
+ step='讀取經理資料';
+ return call('portalManagerView',S.token,h.month).then(function(v){
+  done=true;clearTimeout(timer);
+  S.view=v;S.branch=v.branches[0]||'';render();
+ });
+}
 if(typeof liff==='undefined')fail('LINE SDK 無法載入');
 else{step='liff.init';liff.init({liffId:LIFF_ID}).then(function(){
  if(!liff.isLoggedIn()){step='liff.login';liff.login();return}
  step='取得 ID token';var token=liff.getIDToken();
  if(!token)throw Error('沒有 ID token，請確認 LIFF Scopes 有勾 openid');
+ S.token=token;
  step='後端驗證身分';
  return call('portalHome',token).then(function(h){
-  done=true;clearTimeout(timer);
   show(h.english+'｜'+h.month.replace('-','年')+'月計薪資料'+(h.basisReady?'':'（管理員尚未產生計薪依據）'));
   window.PORTAL={token:token,home:h};
+  if(h.roles.indexOf('manager')>=0)return startManager(h);
+  done=true;clearTimeout(timer);
+  document.getElementById('main').appendChild(el('div',{class:'card muted',text:'個人確認功能開發中。'}));
  });
 }).catch(fail)}
 </script>
