@@ -453,7 +453,13 @@ function renderReview(m){
   var st=a.review.status,busy=!!S.saving['rv:'+a.fileId],shown=S.images[a.fileId];
   var c=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:a.english+'（'+a.branch+KIND[a.kind]+'）'}),el('span',{class:st==='approved'?'badge':st==='rejected'?'badge stale':'badge edit',text:LABEL[st]})));
   c.appendChild(el('div',{class:'muted',text:a.uploadedBy+' 上傳，'+localTime(a.uploadedAt)}));
+  // What the manager declared, to compare with the sheet.
+  var d=a.claim||{};
+  if(a.kind==='partTime'){kv(c,'經理申報：一般工時',d.hours+' 小時');kv(c,'經理申報：國定假日工時',d.holidayHours+' 小時')}
+  else{kv(c,'經理申報：有學員出席',d.withStudents+' 堂');kv(c,'經理申報：無學員出席',d.withoutStudents+' 堂')}
+  if(d.version>1)c.appendChild(el('div',{class:'muted',text:'這筆申報已修改過，目前是第 '+d.version+' 版。'}));
   if(st==='rejected')c.appendChild(el('div',{class:'err',style:'font-size:14px',text:'退回原因：'+a.review.note}));
+  if(a.review.changed)c.appendChild(el('div',{class:'err',style:'font-size:14px',text:'經理已修改申報，請重新審核。'}));
   if(shown){
    if(/^image\/(jpeg|png)/.test(shown.mime))c.appendChild(el('img',{src:'data:'+shown.mime+';base64,'+shown.base64,alt:a.fileName,style:'width:100%;border-radius:8px;margin-top:8px;display:block'}));
    else c.appendChild(el('a',{href:shown.url,target:'_blank',rel:'noopener',text:'在雲端硬碟開啟 '+a.fileName,style:'display:block;margin-top:8px'}));
