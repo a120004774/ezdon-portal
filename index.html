@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>一起動計薪確認</title>
+<style>
+body{font-family:system-ui,-apple-system,"Noto Sans TC",sans-serif;margin:0;padding:16px;background:#f6f7f9;color:#1d2433}
+.card{background:#fff;border-radius:12px;padding:16px;margin-bottom:12px;box-shadow:0 1px 3px rgba(0,0,0,.08)}
+.muted{color:#667085;font-size:14px}.err{color:#b42318}
+</style></head>
+<body>
+<div class="card"><h2 style="margin:0 0 8px">一起動計薪確認</h2><div id="who" class="muted">正在確認 LINE 身分…</div></div>
+<div id="main"></div>
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+// Public page: no secrets and no payroll data here; every API call is checked on the server with the LINE ID token.
+var LIFF_ID='2012353880-kqKD1F4z';
+var API_URL='https://script.google.com/macros/s/AKfycbwqvEO0m705ynEo4hXMqwLW-o01DoGCq_g0xU3vbP4B1sK9IhhC3ADQHVCYgKkBuyMH/exec';
+function call(name){
+ return fetch(API_URL,{method:'POST',headers:{'Content-Type':'text/plain;charset=utf-8'},body:JSON.stringify({fn:name,args:[].slice.call(arguments,1)})})
+  .then(function(res){return res.json()})
+  .then(function(r){if(r&&r.ok)return r.result;throw Error(r?r.error:'沒有回應')});
+}
+function show(text,isErr){var d=document.getElementById('who');d.textContent=text;d.className=isErr?'err':'muted'}
+// A failed SDK load or a hung call would otherwise leave the page on the first message forever.
+var step='載入 LINE SDK',done=false;
+var timer=setTimeout(function(){if(!done)show('逾時，停在：'+step,true)},30000);
+function fail(e){done=true;clearTimeout(timer);show('錯誤（'+step+'）：'+(e&&e.message||e),true)}
+if(typeof liff==='undefined')fail('LINE SDK 無法載入');
+else{step='liff.init';liff.init({liffId:LIFF_ID}).then(function(){
+ if(!liff.isLoggedIn()){step='liff.login';liff.login();return}
+ step='取得 ID token';var token=liff.getIDToken();
+ if(!token)throw Error('沒有 ID token，請確認 LIFF Scopes 有勾 openid');
+ step='後端驗證身分';
+ return call('portalHome',token).then(function(h){
+  done=true;clearTimeout(timer);
+  show(h.english+'｜'+h.month.replace('-','年')+'月計薪資料'+(h.basisReady?'':'（管理員尚未產生計薪依據）'));
+  window.PORTAL={token:token,home:h};
+ });
+}).catch(fail)}
+</script>
+</body></html>
