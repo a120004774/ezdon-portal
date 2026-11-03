@@ -151,7 +151,7 @@ function cardId(s){return s.branch+'|'+s.english}
 function draftOf(s){
  var k=cardId(s);if(S.drafts[k])return S.drafts[k];
  var ev=lineOf('evaluation',s.branch,s.english),pt=lineOf('partTime',s.branch,s.english),p=pt?pt.payload:{};
- return S.drafts[k]={type:pt?'partTime':'fullTime',values:ev?JSON.parse(JSON.stringify(ev.payload)):{},hours:pt?String(p.hours):'',holidayHours:pt?String(p.holidayHours||0):'',attachments:pt?(pt.attachments||[]).slice():[],reason:''};
+ return S.drafts[k]={type:pt?'partTime':ev?'fullTime':(s.defaultKind||'fullTime'),values:ev?JSON.parse(JSON.stringify(ev.payload)):{},hours:pt?String(p.hours):'',holidayHours:pt?String(p.holidayHours||0):'',attachments:pt?(pt.attachments||[]).slice():[],reason:''};
 }
 /** What a card needs: saved (nothing to do) / empty (untouched) / ready (can be saved) / missing:<what>. */
 function cardState(s){
@@ -163,7 +163,7 @@ function cardState(s){
  var ids=function(list){return list.map(function(a){return a.id}).join()};
  var changed;
  if(d.type==='fullTime')changed=pt?true:ev?evalKey(d.values)!==evalKey(ev.payload):EVAL_ITEMS.some(function(i){return !!d.values[i[0]]});
- else changed=ev?true:pt?Number(d.hours)!==pt.payload.hours||Number(d.holidayHours||0)!==(pt.payload.holidayHours||0)||ids(d.attachments)!==ids(pt.attachments||[])||newFiles>0:true;
+ else changed=ev?true:pt?Number(d.hours)!==pt.payload.hours||Number(d.holidayHours||0)!==(pt.payload.holidayHours||0)||ids(d.attachments)!==ids(pt.attachments||[])||newFiles>0:(d.hours!==''||d.attachments.length+newFiles>0);
  if(!changed)return {name:had?'saved':'empty',had:had};
  if(!filled)return {name:'missing',had:had,what:d.type==='fullTime'?(picked3?'沒填不合格原因':'考核沒選完'):d.hours===''?'沒填工時':'沒選紙本'};
  if(had&&!d.reason.trim())return {name:'missing',had:had,what:'沒填修改原因'};
