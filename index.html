@@ -13,7 +13,7 @@ h2{font-size:20px;margin:0 0 4px}h3{font-size:16px;margin:0}
 .notice.warn{background:var(--warn-soft);color:var(--warn)}.notice.bad{background:var(--err-soft);color:var(--err)}.notice.good{background:var(--accent-soft);color:var(--accent)}
 .row{display:flex;align-items:center;justify-content:space-between;gap:8px}
 .chips{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
-.tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;background:#eaecf0;border-radius:10px;padding:4px;margin-bottom:10px}
+.tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:4px;background:#eaecf0;border-radius:10px;padding:4px;margin-bottom:10px}
 button{font:inherit;border:1px solid var(--line);background:var(--card);color:var(--text);border-radius:8px;padding:9px 12px;min-height:42px;cursor:pointer}
 button:disabled{opacity:.5}
 button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600;width:100%}
@@ -45,6 +45,8 @@ input:disabled{background:#f2f4f7;color:var(--muted)}
 body.has-bar #busy{bottom:calc(100px + env(safe-area-inset-bottom))}
 .startup{display:flex;align-items:center;gap:10px;font-size:15px;color:var(--accent);font-weight:600}.startup .spin{width:22px;height:22px;border-width:3px}
 .pendingFile{color:var(--warn)}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:6px 0;border-top:1px solid var(--line);font-size:15px}.kv b{font-weight:600;text-align:right}
+.badge.stale{background:var(--err-soft);color:var(--err)}
 </style></head>
 <body>
 <div id="progress"><i></i></div>
@@ -91,9 +93,9 @@ function localTime(iso){var d=new Date(Date.parse(iso)+8*3600e3);return isNaN(d)
 
 // ---------- manager screen ----------
 var EVAL_ITEMS=[['admin','行政考核'],['execution','執行考核'],['target','經理指定目標']];
-var TABS=[['coach','教練'],['visiting','跑課'],['instructor','教官']];
+var TABS=[['coach','教練'],['visiting','跑課'],['instructor','教官'],['mine','我的確認']];
 var LABELS={partTime:'兼職教練',visiting:'跑課老師',instructor:'教官課程'};
-var S={token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
+var S={me:null,lateInput:'',token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
 function picked(id){return S.picked[id]||(S.picked[id]=[])}
 function refreshBusy(){
  var n=savingCount(),box=document.getElementById('busy');
@@ -242,6 +244,7 @@ function saveAll(){
 }
 function renderBar(){
  var b=document.getElementById('bar');b.textContent='';
+ if(S.tab==='mine'){renderMineBar(b);return}
  var show=S.view&&S.tab==='coach'&&S.view.windows.correction.open;
  document.body.className=show?'has-bar':'';
  if(!S.view)return;
@@ -358,6 +361,69 @@ function submitForm(f){
   });
  },function(r){mergeSaved(r);S.form=null},english+' 已送出',hasPhotos?'正在處理相片':'正在儲存');
 }
+// ---------- personal confirmation: everything confirmed with one button ----------
+var ITEM_LABELS={stats:'上課統計',leave:'請假紀錄',evaluation:'三項考核',specialBonus:'特殊獎金',partTimeHours:'兼職工時',instructorFee:'教官費',managerRevenue:'分店營業額',managerStats:'我的上課統計'};
+function money(n){return Number(n).toLocaleString('en-US')+' 元'}
+function itemRows(it){
+ var v=it.value||{},r=[];
+ if(it.item==='stats'||it.item==='managerStats'){r=[['團課人次',v.groupAttendance],['一對一（堂）',v.private1v1],['一對二（堂）',v.private1v2]];if(v.note)r.push([v.note,''])}
+ if(it.item==='leave'){r=[['病假（小時）',v.sickHours],['事假（小時）',v.personalHours]];(v.items||[]).forEach(function(x){r.push([String(x),''])})}
+ if(it.item==='evaluation'&&!v.missing){r=EVAL_ITEMS.map(function(i){return [i[1],v[i[0]]]});r.push(['達標狀況',v.tier]);if(v.note)r.push([v.note,''])}
+ if(it.item==='specialBonus'){(v.lines||[]).forEach(function(x){r.push([x.item+(x.basis?'（'+x.basis+'）':''),money(x.amount)])});r.push(['合計',money(v.total||0)]);if(v.note)r.push([v.note,''])}
+ if(it.item==='partTimeHours')r=[['分店',v.branch],['一般工時（小時）',v.hours],['國定假日工時（小時）',v.holidayHours]];
+ if(it.item==='instructorFee')(v.lines||[]).forEach(function(x){r.push([x.course+'（'+x.hours+' 小時 × '+x.headcount+' 人 × '+x.rate+' 元）',money(x.fee)])});
+ if(it.item==='managerRevenue')(v.branches||[]).forEach(function(x){r.push([x.branch,x.revenue===null?'尚無資料':money(x.revenue)])});
+ return r;
+}
+function mineLateChanged(){var me=S.me;return me.needsLate&&me.lateWindow.open&&S.lateInput.trim()!==''&&(!me.late||Number(S.lateInput)!==me.late.minutes)}
+function mineTodo(){return S.me.items.filter(function(i){return i.confirmable&&i.status.status!=='confirmed'})}
+function renderMine(m){
+ var me=S.me;
+ if(!me){m.appendChild(el('div',{class:'card muted',text:'正在讀取…'}));return}
+ if(me.note)m.appendChild(el('div',{class:'card muted',text:me.note}));
+ if(me.items.length)m.appendChild(el('div',{class:'notice warn',text:'請核對自己的資料。數字有問題請先聯絡經理，不要按確認。截止：'+localTime(me.cycle.confirmDeadline)}));
+ me.items.forEach(function(it){
+  var st=it.status.status,badge=st==='confirmed'?el('span',{class:'badge',text:'已確認'}):st==='stale'?el('span',{class:'badge stale',text:'資料已更新，請重新確認'}):st==='overdue'?el('span',{class:'badge stale',text:'逾期未確認'}):el('span',{class:'badge todo',text:'待確認'});
+  var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:ITEM_LABELS[it.item]||it.item}),badge));
+  if(it.value&&it.value.missing)card.appendChild(el('div',{class:'muted',text:'經理還沒提供，暫時無法確認。'}));
+  if(it.value&&it.value.pending)card.appendChild(el('div',{class:'muted',text:'要等經理的三項考核，暫時無法確認。'}));
+  itemRows(it).forEach(function(r){card.appendChild(el('div',{class:'kv'},el('span',{text:r[0]}),el('b',{text:String(r[1])})))});
+  if(!it.open)card.appendChild(el('div',{class:'muted mt',text:it.reason}));
+  m.appendChild(card);
+ });
+ if(me.needsLate){
+  var lc=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:'遲到申報'}),me.late?el('span',{class:'badge',text:'已申報 '+me.late.minutes+' 分鐘'}):el('span',{class:'badge todo',text:'未申報'})));
+  if(me.lateWindow.open)lc.appendChild(field(S,'lateInput','本月遲到合計（分鐘，沒有遲到請填 0）',{type:'number',inputMode:'numeric',step:'1',min:'0',disabled:!!S.saving.mine},'late',function(){renderBar()}));
+  else lc.appendChild(el('div',{class:'muted',text:me.lateWindow.reason}));
+  m.appendChild(lc);
+ }
+}
+function renderMineBar(b){
+ document.body.className='';
+ var me=S.me;if(!me)return;
+ var todo=mineTodo(),late=mineLateChanged(),lateMissing=me.needsLate&&me.lateWindow.open&&!me.late&&S.lateInput.trim()==='';
+ if(!todo.length&&!late&&!lateMissing&&!S.saving.mine)return;
+ document.body.className='has-bar';
+ var box=el('div',{class:'bar'});
+ if(lateMissing)box.appendChild(el('div',{class:'muted',text:'請先填遲到分鐘數，沒有遲到請填 0。'}));
+ var n=todo.length+(late?1:0);
+ box.appendChild(S.saving.mine?el('button',{class:'primary',disabled:true},el('span',{class:'spin',style:'margin-right:8px'}),'確認中，請先不要關閉頁面'):el('button',{class:'primary',text:'全部確認（'+n+' 項）',disabled:lateMissing||!n,on:{click:confirmAll}}));
+ b.appendChild(box);
+}
+function confirmAll(){
+ var me=S.me,todo=mineTodo(),late=mineLateChanged();
+ var req={items:todo.map(function(i){return {item:i.item,digest:i.digest}}),lateMinutes:late?Number(S.lateInput):undefined};
+ run('mine',function(){return call('portalConfirmAll',S.token,me.month,req)},function(r){
+  var bad=[];
+  r.results.forEach(function(x){
+   var it=me.items.filter(function(i){return i.item===x.item})[0];
+   if(x.ok){if(it)it.status={status:'confirmed',at:x.at}}else bad.push((ITEM_LABELS[x.item]||x.item)+'：'+x.error);
+  });
+  if(r.late){me.late=r.late}
+  if(bad.length)setMsg('有項目沒有確認成功：'+bad.join('；'),'bad');else setMsg('已全部確認，謝謝！');
+  window.scrollTo(0,0);
+ },null,'正在送出確認');
+}
 // Phone photos are shrunk (longest side 2200 px, still readable) so uploads stay quick on mobile data; PDFs and anything the browser can't decode go as they are.
 function preparedFile(file){
  var raw=function(){return new Promise(function(ok,no){var r=new FileReader();r.onerror=function(){no(Error('讀不到這個檔案'))};
@@ -381,20 +447,26 @@ function render(){
  // A background save can finish while someone is typing: keep their cursor where it was.
  var a=document.activeElement,focusId=a&&a.getAttribute&&a.getAttribute('data-f'),caret=null;
  if(focusId)try{caret=a.selectionStart}catch(e){}
- var m=document.getElementById('main'),v=S.view,w=v.windows;m.textContent='';
- if(!w.correction.open)m.appendChild(el('div',{class:'notice bad',text:'目前不能填報：'+w.correction.reason}));
- else if(!w.initial.open)m.appendChild(el('div',{class:'notice warn',text:w.initial.reason+'。已送出的資料還可以修改，要新增請聯絡管理員。'}));
- else m.appendChild(el('div',{class:'notice warn',text:'請在 '+localTime(v.cycle.managerDeadline)+' 前填完。'}));
+ var m=document.getElementById('main'),v=S.view,w=v&&v.windows;m.textContent='';
+ if(v&&S.tab!=='mine'){
+  if(!w.correction.open)m.appendChild(el('div',{class:'notice bad',text:'目前不能填報：'+w.correction.reason}));
+  else if(!w.initial.open)m.appendChild(el('div',{class:'notice warn',text:w.initial.reason+'。已送出的資料還可以修改，要新增請聯絡管理員。'}));
+  else m.appendChild(el('div',{class:'notice warn',text:'請在 '+localTime(v.cycle.managerDeadline)+' 前填完。'}));
+ }
  if(S.msg)m.appendChild(el('div',{class:'notice '+(S.msg.kind==='bad'?'bad':'good'),text:S.msg.text}));
- if(v.branches.length>1){
+ if(v&&S.tab!=='mine'&&v.branches.length>1){
   var chips=el('div',{class:'chips'});
   v.branches.forEach(function(b){chips.appendChild(el('button',{class:'chip'+(b===S.branch?' on':''),text:b,on:{click:function(){S.branch=b;S.form=null;S.withdrawing=null;setMsg('');render()}}}))});
   m.appendChild(chips);
  }
- var tabs=el('div',{class:'tabs'});
- TABS.forEach(function(t){tabs.appendChild(el('button',{class:'tab'+(t[0]===S.tab?' on':''),text:t[1],on:{click:function(){S.tab=t[0];S.form=null;S.withdrawing=null;setMsg('');render()}}}))});
- m.appendChild(tabs);
- if(S.tab==='coach')renderCoach(m);else renderLines(m,S.tab);
+ if(v){
+  var tabs=el('div',{class:'tabs'});
+  TABS.forEach(function(t){tabs.appendChild(el('button',{class:'tab'+(t[0]===S.tab?' on':''),text:t[1],on:{click:function(){S.tab=t[0];S.form=null;S.withdrawing=null;setMsg('');
+   if(t[0]==='mine'&&!S.me&&!S.saving.me)run('me',function(){return call('portalMyBasis',S.token,v.month)},function(r){S.me=r;S.lateInput=r.late?String(r.late.minutes):''},null,'正在讀取');
+   render()}}}))});
+  m.appendChild(tabs);
+ }
+ if(S.tab==='mine')renderMine(m);else if(S.tab==='coach')renderCoach(m);else renderLines(m,S.tab);
  renderBar();refreshBusy();
  if(focusId){
   var again=m.querySelector('[data-f="'+focusId.replace(/"/g,'')+'"]');
@@ -419,7 +491,7 @@ else{step='liff.init';liff.init({liffId:LIFF_ID}).then(function(){
    loadDrafts();render();
    return;
   }
-  document.getElementById('main').appendChild(el('div',{class:'card muted',text:'個人確認功能開發中。'}));
+  S.tab='mine';S.me=h.mine;S.lateInput=h.mine.late?String(h.mine.late.minutes):'';render();
  });
 }).catch(fail)}
 </script>
