@@ -106,7 +106,7 @@ function evalPayload(v){
 function evalKey(v){return JSON.stringify(EVAL_ITEMS.map(function(i){return [v[i[0]]||'',v[i[0]]==='不合格'?failReason(v,i[0]):'']}))}
 var TABS=[['coach','教練'],['visiting','跑課'],['instructor','教官'],['mine','我的確認']];
 var LABELS={partTime:'兼職教練',visiting:'跑課老師',instructor:'教官課程'};
-var S={track:null,bossMonth:'',images:{},rejecting:{},boss:null,tokenInput:'',me:null,lateInput:'',token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
+var S={track:null,bossMonth:'',images:{},edits:{},boss:null,tokenInput:'',me:null,lateInput:'',token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
 function picked(id){return S.picked[id]||(S.picked[id]=[])}
 function refreshBusy(){
  var n=savingCount(),box=document.getElementById('busy');
@@ -175,6 +175,8 @@ function coachCard(s){
  var badge=busy?el('span',{class:'badge edit'},el('span',{class:'spin',style:'width:11px;height:11px;margin-right:4px;vertical-align:-1px'}),'儲存中'):st.name==='saved'?el('span',{class:'badge',text:'已儲存'}):st.name==='empty'?el('span',{class:'badge todo',text:'未填'}):el('span',{class:'badge edit',text:'未儲存'});
  var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:s.english+'（'+s.title+'）'}),badge));
  if(S.errors[id])card.appendChild(el('div',{class:'err',text:S.errors[id],style:'font-size:14px;margin-top:4px'}));
+ var ptLine=lineOf('partTime',s.branch,s.english);
+ if(ptLine&&ptLine.ownerEdited)card.appendChild(el('div',{class:'muted',text:'老闆審核後已修改數字。'}));
  var pick=function(field,value){return function(){d[field]=value;delete S.errors[id];storeDrafts();render()}};
  if(s.title==='教練'){
   // One or the other: only the chosen kind's fields are shown, so it never looks like both need filling in.
@@ -292,10 +294,8 @@ function lineCard(l){
  var busy=!!S.saving['wd:'+l.key];
  var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:l.english+(l.kind==='partTime'?'（兼職）':'')}),busy?el('span',{class:'badge edit'},el('span',{class:'spin',style:'width:11px;height:11px;margin-right:4px;vertical-align:-1px'}),'撤銷中'):el('span',{class:'badge',text:'第 '+l.version+' 版'})),
   el('div',{text:lineSummary(l)}));
- (l.attachments||[]).forEach(function(a){
-  card.appendChild(el('div',{class:'file muted',text:'紙本：'+(a.fileName||a.id)}));
-  if(a.review&&a.review.status==='rejected')card.appendChild(el('div',{class:'err',style:'font-size:14px',text:'被退回：'+a.review.note+'（請按修改，移除後重新上傳）'}));
- });
+ if(l.ownerEdited)card.appendChild(el('div',{class:'muted',text:'老闆審核後已修改數字。'}));
+ (l.attachments||[]).forEach(function(a){card.appendChild(el('div',{class:'file muted',text:'紙本：'+(a.fileName||a.id)}))});
  if(S.withdrawing===l.key){
   card.appendChild(field(S,'withdrawReason','撤銷原因（必填）',{},'wd',null));
   card.appendChild(el('div',{class:'two mt'},
@@ -340,10 +340,7 @@ function field(f,key,label,attrs,scope,after){
 // Choosing a file only remembers it; it goes up together with the rest when saved.
 function attachmentBox(card,f,chosen,busy){
  card.appendChild(el('label',{text:'紙本簽到表（相片或 PDF，必填）'}));
- f.attachments.forEach(function(a,i){
-  card.appendChild(el('div',{class:'row file'},el('span',{text:a.fileName||a.id}),el('button',{class:'link danger',text:'移除',disabled:busy,on:{click:function(){f.attachments.splice(i,1);storeDrafts();render()}}})));
-  if(a.review&&a.review.status==='rejected')card.appendChild(el('div',{class:'err',style:'font-size:14px',text:'被退回：'+a.review.note+'（請移除後重新上傳）'}));
- });
+ f.attachments.forEach(function(a,i){card.appendChild(el('div',{class:'row file'},el('span',{text:a.fileName||a.id}),el('button',{class:'link danger',text:'移除',disabled:busy,on:{click:function(){f.attachments.splice(i,1);storeDrafts();render()}}})))});
  chosen.forEach(function(file,i){card.appendChild(el('div',{class:'row file'},el('span',{class:'pendingFile',text:file.name+'（尚未送出）'}),el('button',{class:'link danger',text:'移除',disabled:busy,on:{click:function(){chosen.splice(i,1);render()}}})))});
  card.appendChild(el('input',{type:'file',accept:'image/*,application/pdf',disabled:busy,on:{change:function(e){var file=e.target.files[0];if(file){chosen.push(file);storeDrafts();render()}}}}));
 }
@@ -445,20 +442,19 @@ function renderTrack(m){
 function renderReview(m){
  var t=S.track;
  if(!t){m.appendChild(el('div',{class:'card muted',text:'正在讀取…'}));return}
- var KIND={partTime:'兼職',visiting:'跑課'},LABEL={pending:'待審核',approved:'已核准',rejected:'已退回'};
+ var KIND={partTime:'兼職',visiting:'跑課'};
  var list=t.attachments.slice().sort(function(a,b){return (a.review.status==='pending'?0:1)-(b.review.status==='pending'?0:1)});
  var waiting=list.filter(function(a){return a.review.status==='pending'}).length;
- m.appendChild(el('div',{class:'muted',style:'margin:0 2px 8px',text:list.length?'待審核 '+waiting+' 張，共 '+list.length+' 張':'本月還沒有紙本。'}));
+ m.appendChild(el('div',{class:'muted',style:'margin:0 2px 8px',text:list.length?'待審核 '+waiting+' 張，共 '+list.length+' 張。數字和紙本不同時，直接改數字再核准。':'本月還沒有紙本。'}));
  list.forEach(function(a){
-  var st=a.review.status,busy=!!S.saving['rv:'+a.fileId],shown=S.images[a.fileId];
-  var c=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:a.english+'（'+a.branch+KIND[a.kind]+'）'}),el('span',{class:st==='approved'?'badge':st==='rejected'?'badge stale':'badge edit',text:LABEL[st]})));
-  c.appendChild(el('div',{class:'muted',text:a.uploadedBy+' 上傳，'+localTime(a.uploadedAt)}));
-  // What the manager declared, to compare with the sheet.
-  var d=a.claim||{};
-  if(a.kind==='partTime'){kv(c,'經理申報：一般工時',d.hours+' 小時');kv(c,'經理申報：國定假日工時',d.holidayHours+' 小時')}
-  else{kv(c,'經理申報：有學員出席',d.withStudents+' 堂');kv(c,'經理申報：無學員出席',d.withoutStudents+' 堂')}
-  if(d.version>1)c.appendChild(el('div',{class:'muted',text:'這筆申報已修改過，目前是第 '+d.version+' 版。'}));
-  if(st==='rejected')c.appendChild(el('div',{class:'err',style:'font-size:14px',text:'退回原因：'+a.review.note}));
+  var st=a.review.status,busy=!!S.saving['rv:'+a.fileId],shown=S.images[a.fileId],d=a.claim||{};
+  var keys=a.kind==='partTime'?[['hours','一般工時（小時）','decimal','0.5'],['holidayHours','國定假日工時','decimal','0.5']]:[['withStudents','有學員出席（堂）','numeric','1'],['withoutStudents','無學員出席（堂）','numeric','1']];
+  var ed=S.edits[a.fileId]||(S.edits[a.fileId]={});
+  keys.forEach(function(k){if(ed[k[0]]===undefined)ed[k[0]]=String(d[k[0]])});
+  var edited=keys.some(function(k){return Number(ed[k[0]])!==Number(d[k[0]])});
+  var blank=keys.some(function(k){return String(ed[k[0]]).trim()===''});
+  var c=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:a.english+'（'+a.branch+KIND[a.kind]+'）'}),el('span',{class:st==='approved'?'badge':'badge edit',text:st==='approved'?'已核准':'待審核'})));
+  c.appendChild(el('div',{class:'muted',text:a.uploadedBy+' 上傳，'+localTime(a.uploadedAt)+(d.version>1?'，申報第 '+d.version+' 版':'')}));
   if(a.review.changed)c.appendChild(el('div',{class:'err',style:'font-size:14px',text:'經理已修改申報，請重新審核。'}));
   if(shown){
    if(/^image\/(jpeg|png)/.test(shown.mime))c.appendChild(el('img',{src:'data:'+shown.mime+';base64,'+shown.base64,alt:a.fileName,style:'width:100%;border-radius:8px;margin-top:8px;display:block'}));
@@ -466,18 +462,17 @@ function renderReview(m){
   }else c.appendChild(el('button',{class:'mt',style:'width:100%',text:'看紙本',disabled:!!S.saving['img:'+a.fileId],on:{click:function(){
    run('img:'+a.fileId,function(){return call('portalBossAttachment',S.token,a.fileId)},function(r){S.images[a.fileId]=r},null,'正在讀取紙本');
   }}}));
-  var rv=function(status,note){run('rv:'+a.fileId,function(){return call('portalBossReview',S.token,a.fileId,status,note)},function(r){a.review=r.review;delete S.rejecting[a.fileId]},status==='approved'?a.english+' 已核准':a.english+' 已退回',status==='approved'?'正在核准':'正在退回')};
-  if(S.rejecting[a.fileId]){
-   c.appendChild(field(S.rejecting[a.fileId],'note','退回原因（必填，經理會看到）',{disabled:busy},'rj:'+a.fileId,null));
-   c.appendChild(el('div',{class:'two mt'},el('button',{text:'取消',disabled:busy,on:{click:function(){delete S.rejecting[a.fileId];render()}}}),
-    el('button',{class:'danger',text:'確定退回',disabled:busy,on:{click:function(){
-     var n=S.rejecting[a.fileId].note.trim();
-     if(!n){setMsg('請填退回原因','bad');render();window.scrollTo(0,0);return}
-     rv('rejected',n);
-    }}})));
-  }else c.appendChild(el('div',{class:'two mt'},
-    el('button',{class:'danger',text:'退回',disabled:busy,on:{click:function(){S.rejecting[a.fileId]={note:''};render()}}}),
-    el('button',{class:'primary',text:st==='approved'?'已核准':'核准',disabled:busy||st==='approved',on:{click:function(){rv('approved','')}}})));
+  var numberBox=function(k){return field(ed,k[0],k[1],{type:'number',inputMode:k[2],step:k[3],min:'0',disabled:busy},'rv:'+a.fileId,render)};
+  c.appendChild(el('div',{class:'two'},numberBox(keys[0]),numberBox(keys[1])));
+  if(edited)c.appendChild(el('div',{class:'muted',style:'margin-top:6px',text:'經理申報：'+keys.map(function(k){return k[1]+' '+d[k[0]]}).join('，')}));
+  var text=busy?'處理中…':edited?'修改並核准':st==='approved'?'已核准':'核准';
+  c.appendChild(el('button',{class:'primary mt',text:text,disabled:busy||blank||(st==='approved'&&!edited),on:{click:function(){
+   var values={};keys.forEach(function(k){values[k[0]]=Number(ed[k[0]])});
+   run('rv:'+a.fileId,function(){return call('portalBossReview',S.token,a.fileId,values)},function(r){
+    a.review=r.review;a.claim=r.claim;delete S.edits[a.fileId];
+    setMsg(r.edited?a.english+' 已修改並核准':a.english+' 已核准');
+   },null,edited?'正在修改並核准':'正在核准');
+  }}}));
   m.appendChild(c);
  });
 }
