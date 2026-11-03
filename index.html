@@ -106,7 +106,7 @@ function evalPayload(v){
 function evalKey(v){return JSON.stringify(EVAL_ITEMS.map(function(i){return [v[i[0]]||'',v[i[0]]==='不合格'?failReason(v,i[0]):'']}))}
 var TABS=[['coach','教練'],['visiting','跑課'],['instructor','教官'],['mine','我的確認']];
 var LABELS={partTime:'兼職教練',visiting:'跑課老師',instructor:'教官課程'};
-var S={boss:null,tokenInput:'',me:null,lateInput:'',token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
+var S={track:null,bossMonth:'',images:{},rejecting:{},boss:null,tokenInput:'',me:null,lateInput:'',token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
 function picked(id){return S.picked[id]||(S.picked[id]=[])}
 function refreshBusy(){
  var n=savingCount(),box=document.getElementById('busy');
@@ -292,7 +292,10 @@ function lineCard(l){
  var busy=!!S.saving['wd:'+l.key];
  var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:l.english+(l.kind==='partTime'?'（兼職）':'')}),busy?el('span',{class:'badge edit'},el('span',{class:'spin',style:'width:11px;height:11px;margin-right:4px;vertical-align:-1px'}),'撤銷中'):el('span',{class:'badge',text:'第 '+l.version+' 版'})),
   el('div',{text:lineSummary(l)}));
- (l.attachments||[]).forEach(function(a){card.appendChild(el('div',{class:'file muted',text:'紙本：'+(a.fileName||a.id)}))});
+ (l.attachments||[]).forEach(function(a){
+  card.appendChild(el('div',{class:'file muted',text:'紙本：'+(a.fileName||a.id)}));
+  if(a.review&&a.review.status==='rejected')card.appendChild(el('div',{class:'err',style:'font-size:14px',text:'被退回：'+a.review.note+'（請按修改，移除後重新上傳）'}));
+ });
  if(S.withdrawing===l.key){
   card.appendChild(field(S,'withdrawReason','撤銷原因（必填）',{},'wd',null));
   card.appendChild(el('div',{class:'two mt'},
@@ -337,7 +340,10 @@ function field(f,key,label,attrs,scope,after){
 // Choosing a file only remembers it; it goes up together with the rest when saved.
 function attachmentBox(card,f,chosen,busy){
  card.appendChild(el('label',{text:'紙本簽到表（相片或 PDF，必填）'}));
- f.attachments.forEach(function(a,i){card.appendChild(el('div',{class:'row file'},el('span',{text:a.fileName||a.id}),el('button',{class:'link danger',text:'移除',disabled:busy,on:{click:function(){f.attachments.splice(i,1);storeDrafts();render()}}})))});
+ f.attachments.forEach(function(a,i){
+  card.appendChild(el('div',{class:'row file'},el('span',{text:a.fileName||a.id}),el('button',{class:'link danger',text:'移除',disabled:busy,on:{click:function(){f.attachments.splice(i,1);storeDrafts();render()}}})));
+  if(a.review&&a.review.status==='rejected')card.appendChild(el('div',{class:'err',style:'font-size:14px',text:'被退回：'+a.review.note+'（請移除後重新上傳）'}));
+ });
  chosen.forEach(function(file,i){card.appendChild(el('div',{class:'row file'},el('span',{class:'pendingFile',text:file.name+'（尚未送出）'}),el('button',{class:'link danger',text:'移除',disabled:busy,on:{click:function(){chosen.splice(i,1);render()}}})))});
  card.appendChild(el('input',{type:'file',accept:'image/*,application/pdf',disabled:busy,on:{change:function(e){var file=e.target.files[0];if(file){chosen.push(file);storeDrafts();render()}}}}));
 }
@@ -393,6 +399,81 @@ function itemRows(it){
  if(it.item==='instructorFee')(v.lines||[]).forEach(function(x){r.push([x.course+'（'+x.hours+' 小時 × '+x.headcount+' 人 × '+x.rate+' 元）',money(x.fee)])});
  if(it.item==='managerRevenue')(v.branches||[]).forEach(function(x){r.push([x.branch,x.revenue===null?'尚無資料':money(x.revenue)])});
  return r;
+}
+// ---------- the owner's tracking and review ----------
+var BOSS_TABS=[['track','申報追蹤'],['review','紙本審核'],['boss','設定']];
+function bossTabs(m){
+ var tabs=el('div',{class:'tabs',style:'grid-template-columns:repeat(3,1fr)'});
+ BOSS_TABS.forEach(function(t){tabs.appendChild(el('button',{class:'tab'+(t[0]===S.tab?' on':''),text:t[1],on:{click:function(){S.tab=t[0];setMsg('');render()}}}))});
+ m.appendChild(tabs);
+}
+function loadTracking(){
+ run('track',function(){return call('portalBossTracking',S.token,S.bossMonth)},function(r){S.track=r;S.bossMonth=r.month},null,'正在讀取進度');
+}
+function kv(card,left,right){card.appendChild(el('div',{class:'kv'},el('span',{text:left}),el('b',{text:String(right)})))}
+function renderTrack(m){
+ var t=S.track;
+ if(!t){m.appendChild(el('div',{class:'card muted',text:'正在讀取…'}));return}
+ var head=el('div',{class:'row mb'},el('b',{text:Number(t.month.slice(5))+' 月薪資'}),el('button',{class:'link',text:'重新整理',disabled:!!S.saving.track,on:{click:loadTracking}}));
+ m.appendChild(head);
+ var doneBranches=t.branches.filter(function(b){return b.done}).length;
+ m.appendChild(el('h3',{text:'經理填報（'+doneBranches+' / '+t.branches.length+' 家分店完成）',style:'margin:4px 2px 8px'}));
+ t.branches.forEach(function(b){
+  var c=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:b.branch+'（'+b.manager+'）'}),el('span',{class:b.done?'badge':'badge edit',text:b.done?'已完成':'未完成'})));
+  b.coaches.forEach(function(x){kv(c,x.english+'（'+x.title+'）',x.state==='fullTime'?'全職，已填':x.state==='partTime'?'兼職，已填':'未填')});
+  if(b.otherPartTime.length)kv(c,'其他兼職',b.otherPartTime.join('、'));
+  kv(c,'跑課',b.visitingNone?'本月沒有':b.visiting?b.visiting+' 位':'未填');
+  kv(c,'教官課程',b.instructors?b.instructors+' 筆':'無');
+  m.appendChild(c);
+ });
+ m.appendChild(el('h3',{text:'個人確認',style:'margin:14px 2px 8px'}));
+ var pc=el('div',{class:'card'});
+ if(!t.basisReady)pc.appendChild(el('div',{class:'muted',text:'本月計薪依據尚未產生，還無法確認。'}));
+ t.people.forEach(function(p){
+  var done=p.total>0&&p.confirmed===p.total&&!p.waiting&&(!p.needsLate||p.lateMinutes!==null);
+  var text=p.confirmed+' / '+p.total+' 項'+(p.stale?'（'+p.stale+' 項要重新確認）':'')+(p.waiting?'，'+p.waiting+' 項等資料':'')+(p.needsLate?(p.lateMinutes===null?'，遲到未報':'，遲到 '+p.lateMinutes+' 分'):'');
+  pc.appendChild(el('div',{class:'kv'},el('span',{text:p.english}),el('b',{text:text,class:done?'':'err'})));
+ });
+ m.appendChild(pc);
+ m.appendChild(el('h3',{text:'通知',style:'margin:14px 2px 8px'}));
+ var nc=el('div',{class:'card'}),names={managerOpen:'1 日經理通知',managerRemind:'3 日經理提醒',staffOpen:'4 日員工通知',staffRemind:'6 日員工提醒'},types=Object.keys(t.notify).filter(function(k){return names[k]});
+ if(!types.length)nc.appendChild(el('div',{class:'muted',text:'本月還沒有發送紀錄。'}));
+ types.forEach(function(k){var n=t.notify[k];kv(nc,names[k],'已送 '+n.sent+(n.failed?'，失敗 '+n.failed:'')+(n.unbound?'，未綁定 '+n.unbound:'')+(n.heldForTest?'，測試略過 '+n.heldForTest:''))});
+ if(t.notBound.length)nc.appendChild(el('div',{class:'err mt',style:'font-size:14px',text:'尚未綁定 LINE：'+t.notBound.join('、')}));
+ m.appendChild(nc);
+}
+function renderReview(m){
+ var t=S.track;
+ if(!t){m.appendChild(el('div',{class:'card muted',text:'正在讀取…'}));return}
+ var KIND={partTime:'兼職',visiting:'跑課'},LABEL={pending:'待審核',approved:'已核准',rejected:'已退回'};
+ var list=t.attachments.slice().sort(function(a,b){return (a.review.status==='pending'?0:1)-(b.review.status==='pending'?0:1)});
+ var waiting=list.filter(function(a){return a.review.status==='pending'}).length;
+ m.appendChild(el('div',{class:'muted',style:'margin:0 2px 8px',text:list.length?'待審核 '+waiting+' 張，共 '+list.length+' 張':'本月還沒有紙本。'}));
+ list.forEach(function(a){
+  var st=a.review.status,busy=!!S.saving['rv:'+a.fileId],shown=S.images[a.fileId];
+  var c=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:a.english+'（'+a.branch+KIND[a.kind]+'）'}),el('span',{class:st==='approved'?'badge':st==='rejected'?'badge stale':'badge edit',text:LABEL[st]})));
+  c.appendChild(el('div',{class:'muted',text:a.uploadedBy+' 上傳，'+localTime(a.uploadedAt)}));
+  if(st==='rejected')c.appendChild(el('div',{class:'err',style:'font-size:14px',text:'退回原因：'+a.review.note}));
+  if(shown){
+   if(/^image\/(jpeg|png)/.test(shown.mime))c.appendChild(el('img',{src:'data:'+shown.mime+';base64,'+shown.base64,alt:a.fileName,style:'width:100%;border-radius:8px;margin-top:8px;display:block'}));
+   else c.appendChild(el('a',{href:shown.url,target:'_blank',rel:'noopener',text:'在雲端硬碟開啟 '+a.fileName,style:'display:block;margin-top:8px'}));
+  }else c.appendChild(el('button',{class:'mt',style:'width:100%',text:'看紙本',disabled:!!S.saving['img:'+a.fileId],on:{click:function(){
+   run('img:'+a.fileId,function(){return call('portalBossAttachment',S.token,a.fileId)},function(r){S.images[a.fileId]=r},null,'正在讀取紙本');
+  }}}));
+  var rv=function(status,note){run('rv:'+a.fileId,function(){return call('portalBossReview',S.token,a.fileId,status,note)},function(r){a.review=r.review;delete S.rejecting[a.fileId]},status==='approved'?a.english+' 已核准':a.english+' 已退回',status==='approved'?'正在核准':'正在退回')};
+  if(S.rejecting[a.fileId]){
+   c.appendChild(field(S.rejecting[a.fileId],'note','退回原因（必填，經理會看到）',{disabled:busy},'rj:'+a.fileId,null));
+   c.appendChild(el('div',{class:'two mt'},el('button',{text:'取消',disabled:busy,on:{click:function(){delete S.rejecting[a.fileId];render()}}}),
+    el('button',{class:'danger',text:'確定退回',disabled:busy,on:{click:function(){
+     var n=S.rejecting[a.fileId].note.trim();
+     if(!n){setMsg('請填退回原因','bad');render();window.scrollTo(0,0);return}
+     rv('rejected',n);
+    }}})));
+  }else c.appendChild(el('div',{class:'two mt'},
+    el('button',{class:'danger',text:'退回',disabled:busy,on:{click:function(){S.rejecting[a.fileId]={note:''};render()}}}),
+    el('button',{class:'primary',text:st==='approved'?'已核准':'核准',disabled:busy||st==='approved',on:{click:function(){rv('approved','')}}})));
+  m.appendChild(c);
+ });
 }
 // ---------- the owner's settings page ----------
 function renderBoss(m){
@@ -511,7 +592,8 @@ function render(){
    render()}}}))});
   m.appendChild(tabs);
  }
- if(S.tab==='boss')renderBoss(m);else if(S.tab==='mine')renderMine(m);else if(S.tab==='coach')renderCoach(m);else renderLines(m,S.tab);
+ if(S.boss)bossTabs(m);
+ if(S.tab==='track')renderTrack(m);else if(S.tab==='review')renderReview(m);else if(S.tab==='boss')renderBoss(m);else if(S.tab==='mine')renderMine(m);else if(S.tab==='coach')renderCoach(m);else renderLines(m,S.tab);
  renderBar();refreshBusy();
  if(focusId){
   var again=m.querySelector('[data-f="'+focusId.replace(/"/g,'')+'"]');
@@ -531,7 +613,7 @@ else{step='liff.init';liff.init({liffId:LIFF_ID}).then(function(){
   done=true;clearTimeout(timer);
   show(h.english+'｜'+h.month.replace('-','年')+'月計薪資料'+(h.basisReady===false?'（管理員尚未產生計薪依據）':''));
   window.PORTAL={token:token,home:h};
-  if(h.boss){show(h.english+'｜系統設定');S.tab='boss';S.boss=h.boss;render();return}
+  if(h.boss){show(h.english+'｜老闆');S.tab='track';S.boss=h.boss;S.bossMonth=h.month;loadTracking();return}
   if(h.manager){
    S.view=h.manager;S.branch=h.manager.branches[0]||'';S.storeKey='ezdon_drafts_'+h.month+'_'+h.english;
    loadDrafts();render();
