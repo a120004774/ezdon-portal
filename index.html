@@ -29,7 +29,7 @@ label{display:block;font-size:14px;color:var(--muted);margin:10px 0 4px}
 input{font:inherit;width:100%;padding:10px;border:1px solid #d0d5dd;border-radius:8px;background:#fff;color:var(--text);min-height:44px}
 input:disabled{background:#f2f4f7;color:var(--muted)}
 .two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
-.mt{margin-top:12px}.badge{font-size:12px;border-radius:999px;padding:2px 8px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}.badge.todo{background:#f2f4f7;color:var(--muted)}
+.mt{margin-top:12px}.mb{margin-bottom:8px}.badge{font-size:12px;border-radius:999px;padding:2px 8px;background:var(--accent-soft);color:var(--accent);white-space:nowrap}.badge.todo{background:#f2f4f7;color:var(--muted)}
 .file{font-size:14px;padding:6px 0;word-break:break-all}
 </style></head>
 <body>
@@ -157,7 +157,16 @@ function renderLines(m,kind){
    el('button',{class:'link danger',text:'撤銷',disabled:S.busy,on:{click:function(){S.withdrawing=l.key;S.withdrawReason='';S.form=null;setMsg('');render()}}})));
   m.appendChild(card);
  });
- if(!list.length&&!S.form)m.appendChild(el('div',{class:'muted',text:S.branch+' 本月還沒有'+label+'資料。',style:'margin:0 2px 8px'}));
+ var declared=kind==='instructor'?null:S.view.lines.filter(function(l){return l.kind==='noneDeclared'&&l.branch===S.branch&&l.english===kind})[0];
+ if(declared){
+  m.appendChild(el('div',{class:'card'},el('div',{class:'row'},el('span',{text:S.branch+' 已標示本月沒有'+label}),
+   el('button',{class:'link danger',text:'取消',disabled:S.busy,on:{click:function(){act(call('portalWithdraw',S.token,S.view.month,declared.key,'取消本月沒有'),'已取消標示')}}}))));
+ }else if(!list.length&&!S.form)m.appendChild(el('div',{class:'muted',text:S.branch+' 本月還沒有'+label+'資料。',style:'margin:0 2px 8px'}));
+ if(!declared&&!list.length&&!S.form&&kind!=='instructor'&&S.view.windows.initial.open){
+  m.appendChild(el('button',{class:'mb',text:'本月沒有'+label,disabled:S.busy,style:'width:100%',on:{click:function(){
+   act(call('portalSubmit',S.token,S.view.month,{kind:'noneDeclared',branch:S.branch,english:kind,payload:{}}),'已標示本月沒有'+label);
+  }}}));
+ }
  if(S.form)m.appendChild(lineForm(S.form));
  else if(S.view.windows.initial.open)m.appendChild(el('button',{class:'primary',text:'新增'+label,disabled:S.busy,on:{click:function(){S.form=blankForm(kind);S.withdrawing=null;setMsg('');render()}}}));
 }
