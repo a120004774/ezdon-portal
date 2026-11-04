@@ -579,6 +579,23 @@ function render(){
  }
 }
 
+// ---------- one's own pay slip, from the rich menu or a notice ----------
+function wantedView(){
+ var q=new URLSearchParams(location.search),v=q.get('view');if(v)return v;
+ var st=q.get('liff.state');return st?new URLSearchParams(st.replace(/^[^?]*\??/,'')).get('view'):null;
+}
+function showPayslip(token){
+ step='讀取薪資明細';showStep('正在讀取薪資明細…');
+ return call('portalMyPayslip',token).then(function(r){
+  done=true;clearTimeout(timer);
+  var m=document.getElementById('main');m.textContent='';
+  if(r.none){show(r.english+'｜薪資明細');m.appendChild(el('div',{class:'card muted',text:'目前沒有可以查看的薪資明細。'}));return}
+  show(r.english+'｜'+r.month.replace('-','年')+'月薪資明細');
+  var img=el('img',{src:'data:'+r.mime+';base64,'+r.base64,alt:r.month+' 薪資明細',style:'width:100%;display:block;border-radius:10px'});
+  m.appendChild(el('div',{class:'card',style:'padding:8px'},img));
+  m.appendChild(el('div',{class:'muted',style:'margin:0 2px',text:'長按圖片可以存到手機。這份明細只有您看得到，請不要轉傳。'}));
+ });
+}
 // ---------- start ----------
 if(typeof liff==='undefined')fail('LINE SDK 無法載入');
 else{step='liff.init';liff.init({liffId:LIFF_ID}).then(function(){
@@ -586,6 +603,7 @@ else{step='liff.init';liff.init({liffId:LIFF_ID}).then(function(){
  step='取得 ID token';var token=liff.getIDToken();
  if(!token)throw Error('沒有 ID token，請確認 LIFF Scopes 有勾 openid');
  S.token=token;
+ if(wantedView()==='payslip')return showPayslip(token);
  step='讀取資料';showStep('正在讀取資料…');
  return call('portalHome',token).then(function(h){
   done=true;clearTimeout(timer);
