@@ -413,7 +413,7 @@ function renderProgress(m){
  m.appendChild(el('div',{class:'row mb'},el('b',{text:Number(p.month.slice(5))+' 月薪資'}),
   el('button',{class:'link',text:'重新整理',disabled:!!S.saving.progress,on:{click:function(){run('progress',function(){return call('portalBossProgress',S.token)},function(r){S.progress=r},null,'正在讀取進度')}}})));
  var waiting=p.managers.filter(function(x){return !x.done});
- m.appendChild(el('div',{class:'notice '+(!waiting.length?'good':'warn'),text:!waiting.length?'經理都確認申報了。':'還沒確認申報：'+waiting.map(function(x){return x.english}).join('、')+'。經理確認後，他的教練和副理才會收到通知。'}));
+ m.appendChild(el('div',{class:'notice '+(!waiting.length?'good':'warn'),text:!waiting.length?'經理都確認申報了。':'還沒確認申報：'+waiting.map(function(x){return x.english}).join('、')+'。經理確認後，該經理的教練和副理才會收到通知。'}));
  if(!p.basisReady)m.appendChild(el('div',{class:'notice warn',text:'本月計薪依據還沒產生，通知還沒發出。'}));
  var STATE={fullTime:'全職，已填',partTime:'兼職，已填',missing:'未填'};
  p.managers.forEach(function(x){
@@ -433,7 +433,7 @@ function renderProgress(m){
   m.appendChild(c);
  });
  if(p.notBound.length)m.appendChild(el('div',{class:'notice bad',text:'尚未綁定 LINE：'+p.notBound.join('、')}));
- m.appendChild(el('div',{class:'muted',style:'margin:0 2px',text:'經理按確認申報後，他的教練和副理會立刻收到通知。要不要接著往下做，請到電腦版薪資系統第 1 步查看通知狀況後決定。'}));
+ m.appendChild(el('div',{class:'muted',style:'margin:0 2px',text:'經理按確認申報後，該經理的教練和副理會立刻收到通知。要不要接著往下做，請到電腦版薪資系統第 1 步查看通知狀況後決定。'}));
 }
 // ---------- the owner's notification settings ----------
 function renderBoss(m){
