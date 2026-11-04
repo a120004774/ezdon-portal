@@ -460,6 +460,15 @@ function renderBoss(m){
   run('boss',function(){return call('portalBossSetTrigger',S.token,on)},function(r){S.boss=r},on?'已開啟自動通知':'已關閉自動通知',on?'正在開啟':'正在關閉');
  }}}));
  m.appendChild(sched);
+ if(b.testMode){
+  var openCard=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:'正式開放'}),el('span',{class:'badge todo',text:'測試期間'})));
+  openCard.appendChild(el('div',{class:'muted',text:'目前只有測試名單內的人進得來、收得到通知。正式開放後，所有在人資資料庫綁定 LINE 的人都可以使用。請先把 LINE Login 頻道改成 Published。'}));
+  openCard.appendChild(el('button',{class:'mt danger',style:'width:100%',text:'結束測試，正式開放',disabled:busy,on:{click:function(){
+   if(!window.confirm('確定要正式開放給所有人嗎？'))return;
+   run('boss',function(){return call('portalBossOpenToAll',S.token)},function(r){S.boss=r},'已正式開放','正在開放');
+  }}}));
+  m.appendChild(openCard);
+ }
 }
 function renderMine(m){
  var me=S.me;
