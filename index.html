@@ -1,6 +1,6 @@
 <!DOCTYPE html>
 <html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<title>一起動計薪確認</title>
+<title>一起動計薪資料</title>
 <style>
 :root{--bg:#f6f7f9;--card:#fff;--text:#1d2433;--muted:#667085;--line:#e4e7ec;--accent:#0f7b5f;--accent-soft:#e6f4f0;--err:#b42318;--err-soft:#fef3f2;--warn:#93600a;--warn-soft:#fdf6e3}
 *{box-sizing:border-box}
@@ -52,7 +52,7 @@ body.has-bar #busy{bottom:calc(100px + env(safe-area-inset-bottom))}
 </style></head>
 <body>
 <div id="progress"><i></i></div>
-<div class="card"><h2>一起動計薪確認</h2><div id="who" class="startup"><span class="spin"></span><span id="whoText">正在確認 LINE 身分…</span></div></div>
+<div class="card"><h2>一起動計薪資料</h2><div id="who" class="startup"><span class="spin"></span><span id="whoText">正在確認 LINE 身分…</span></div></div>
 <div id="main"></div>
 <div id="bar"></div>
 <div id="busy"><span class="spin"></span><span id="busyText"></span></div>
@@ -104,7 +104,7 @@ function evalPayload(v){
  return p;
 }
 function evalKey(v){return JSON.stringify(EVAL_ITEMS.map(function(i){return [v[i[0]]||'',v[i[0]]==='不合格'?failReason(v,i[0]):'']}))}
-var TABS=[['coach','教練'],['visiting','跑課'],['instructor','教官'],['mine','我的確認']];
+var TABS=[['coach','教練'],['visiting','跑課'],['instructor','教官'],['mine','我的資料']];
 var LABELS={partTime:'兼職教練',visiting:'跑課老師',instructor:'教官課程'};
 var S={progress:null,boss:null,tokenInput:'',me:null,lateInput:'',token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
 function picked(id){return S.picked[id]||(S.picked[id]=[])}
@@ -218,7 +218,7 @@ function renderCoach(m){
  // Part-time coaches who aren't in the 人資資料庫 list for this branch.
  linesOf('partTime').filter(function(l){return !staff.some(function(s){return sameName(s.english,l.english)})}).forEach(function(l){m.appendChild(lineCard(l))});
  if(S.form&&S.form.kind==='partTime')m.appendChild(lineForm(S.form));
- else if(S.view.windows.initial.open)m.appendChild(el('button',{class:'link',text:'＋ 新增不在名單上的兼職教練',on:{click:function(){S.form=blankForm('partTime');S.withdrawing=null;setMsg('');render()}}}));
+ else if(S.view.windows.provide.open)m.appendChild(el('button',{class:'link',text:'＋ 新增不在名單上的兼職教練',on:{click:function(){S.form=blankForm('partTime');S.withdrawing=null;setMsg('');render()}}}));
 }
 // Every selected card, with its photos, goes up together; very large sets are split so one request stays within the limit.
 var MAX_REQUEST=19000000;
@@ -266,7 +266,7 @@ function saveAll(){
 function renderBar(){
  var b=document.getElementById('bar');b.textContent='';
  if(S.tab==='mine'){renderMineBar(b);return}
- var show=S.view&&S.tab==='coach'&&S.view.windows.correction.open;
+ var show=S.view&&S.tab==='coach'&&S.view.windows.provide.open;
  document.body.className=show?'has-bar':'';
  if(!S.view)return;
  if(!show)return;
@@ -319,14 +319,14 @@ function renderLines(m,kind){
   m.appendChild(el('div',{class:'card'},el('div',{class:'row'},el('span',{text:S.branch+' 已標示本月沒有'+label}),
    el('button',{class:'link danger',text:'取消',disabled:marking,on:{click:function(){run('none:'+S.branch,function(){return call('portalWithdraw',S.token,S.view.month,declared.key,'取消本月沒有')},function(){mergeSaved({removed:[declared.key]})},'已取消標示','正在取消')}}}))));
  }else if(!list.length&&!S.form)m.appendChild(el('div',{class:'muted',text:S.branch+' 本月還沒有'+label+'資料。',style:'margin:0 2px 8px'}));
- if(!declared&&!list.length&&!S.form&&S.view.windows.initial.open){
+ if(!declared&&!list.length&&!S.form&&S.view.windows.provide.open){
   m.appendChild(el('button',{class:'mb',text:marking?'處理中…':'本月沒有'+label,disabled:marking,style:'width:100%',on:{click:function(){
    var branch=S.branch;
    run('none:'+branch,function(){return call('portalSubmit',S.token,S.view.month,{kind:'noneDeclared',branch:branch,english:kind,payload:{}})},mergeSaved,'已標示本月沒有'+label,'正在儲存');
   }}}));
  }
  if(S.form)m.appendChild(lineForm(S.form));
- else if(S.view.windows.initial.open)m.appendChild(el('button',{class:'primary',text:'新增'+label,on:{click:function(){S.form=blankForm(kind);S.withdrawing=null;setMsg('');render()}}}));
+ else if(S.view.windows.provide.open)m.appendChild(el('button',{class:'primary',text:'新增'+label,on:{click:function(){S.form=blankForm(kind);S.withdrawing=null;setMsg('');render()}}}));
 }
 function formFromLine(l){
  var f=blankForm(l.kind),p=l.payload||{};
@@ -383,7 +383,7 @@ function submitForm(f){
   });
  },function(r){mergeSaved(r);S.form=null},english+' 已送出',hasPhotos?'正在處理相片':'正在儲存');
 }
-// ---------- personal confirmation: everything confirmed with one button ----------
+// ---------- personal data: told, not asked to confirm ----------
 var ITEM_LABELS={stats:'上課統計',leave:'請假紀錄',evaluation:'三項考核',specialBonus:'特殊獎金',partTimeHours:'兼職工時',instructorFee:'教官費',managerRevenue:'分店營業額',managerStats:'我的上課統計'};
 function money(n){return Number(n).toLocaleString('en-US')+' 元'}
 function itemRows(it){
@@ -397,7 +397,7 @@ function itemRows(it){
  if(it.item==='managerRevenue')(v.branches||[]).forEach(function(x){r.push([x.branch,x.revenue===null?'尚無資料':money(x.revenue)])});
  return r;
 }
-// ---------- the owner's page: watch managers on the 1st–3rd ----------
+// ---------- the owner's page: watch managers from the 3rd ----------
 var BOSS_TABS=[['progress','經理申報進度'],['boss','通知設定']];
 function bossTabs(m){
  var tabs=el('div',{class:'tabs',style:'grid-template-columns:repeat(2,1fr)'});
@@ -406,18 +406,18 @@ function bossTabs(m){
 }
 function renderProgress(m){
  var p=S.progress;
- m.appendChild(el('div',{class:'row mb'},el('b',{text:Number(p.month.slice(5))+' 月薪資，'+localTime(p.deadline)+' 截止'}),
+ m.appendChild(el('div',{class:'row mb'},el('b',{text:Number(p.month.slice(5))+' 月薪資'}),
   el('button',{class:'link',text:'重新整理',disabled:!!S.saving.progress,on:{click:function(){run('progress',function(){return call('portalBossProgress',S.token)},function(r){S.progress=r},null,'正在讀取進度')}}})));
  var waiting=p.managers.filter(function(x){return !x.done});
- m.appendChild(el('div',{class:'notice '+(!waiting.length?'good':p.late?'bad':'warn'),text:!waiting.length?'經理都完成了，教練和副理可以接著確認。':(p.late?'已過截止時間，':'')+'還沒完成：'+waiting.map(function(x){return x.english}).join('、')+'。沒完成的話，教練和副理無法接著確認。'}));
- if(!p.basisReady)m.appendChild(el('div',{class:'notice warn',text:'本月計薪依據還沒產生，經理暫時無法確認營業額。'}));
- var CONFIRM={confirmed:'已確認',pending:'未確認',stale:'資料更新，要重新確認',overdue:'逾期',noBasis:'還不能確認'},STATE={fullTime:'全職，已填',partTime:'兼職，已填',missing:'未填'};
+ m.appendChild(el('div',{class:'notice '+(!waiting.length?'good':'warn'),text:!waiting.length?'經理都申報完了。':'還沒申報完：'+waiting.map(function(x){return x.english}).join('、')+'。沒申報的部分，教練和副理會看到「等待經理申報中」。'}));
+ if(!p.basisReady)m.appendChild(el('div',{class:'notice warn',text:'本月計薪依據還沒產生，通知還沒發出。'}));
+ var STATE={fullTime:'全職，已填',partTime:'兼職，已填',missing:'未填'};
  p.managers.forEach(function(x){
   var c=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:x.english}),el('span',{class:x.done?'badge':'badge edit',text:x.done?'已完成':'未完成'})));
   if(!x.bound)c.appendChild(el('div',{class:'err',style:'font-size:14px',text:'尚未綁定 LINE，收不到通知。'}));
   var row=function(l,v,bad){c.appendChild(el('div',{class:'kv'},el('span',{text:l}),el('b',{text:String(v),class:bad?'err':''})))};
-  row('營業額確認',CONFIRM[x.revenue]||x.revenue,x.revenue!=='confirmed');
-  row('上課統計確認',CONFIRM[x.stats]||x.stats,x.stats!=='confirmed');
+
+
   x.branches.forEach(function(b){
    c.appendChild(el('div',{style:'font-weight:600;margin-top:10px',text:b.branch}));
    b.coaches.forEach(function(k){row(k.english+'（'+k.title+'）',STATE[k.state],k.state==='missing')});
@@ -429,7 +429,7 @@ function renderProgress(m){
   m.appendChild(c);
  });
  if(p.notBound.length)m.appendChild(el('div',{class:'notice bad',text:'尚未綁定 LINE：'+p.notBound.join('、')}));
- m.appendChild(el('div',{class:'muted',style:'margin:0 2px',text:'教練和副理什麼時候確認不用管，6 日過後系統會自動視為已確認。7 日起請到電腦版薪資系統作業。'}));
+ m.appendChild(el('div',{class:'muted',style:'margin:0 2px',text:'其他人員 5 日收到通知，經理申報後會自動補發。要不要接著往下做，請到電腦版薪資系統第 1 步查看通知狀況後決定。'}));
 }
 // ---------- the owner's notification settings ----------
 function renderBoss(m){
@@ -449,7 +449,7 @@ function renderBoss(m){
  }}}));
  m.appendChild(testCard);
  var sched=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:'每月自動通知'}),el('span',{class:b.triggerOn?'badge':'badge todo',text:b.triggerOn?'開啟':'關閉'})));
- sched.appendChild(el('div',{class:'muted',text:'開啟後，每月 1、3、4、6 日 09:00 起自動通知。'+(b.testMode?'目前是測試期間，只會傳給允許名單內的人。':'')}));
+ sched.appendChild(el('div',{class:'muted',text:'開啟後，每月 3 日通知經理、5 日通知其他人員，資料有更新時自動補發。'+(b.testMode?'目前是測試期間，只會傳給允許名單內的人。':'')}));
  if(b.triggerNeedsAuth)sched.appendChild(el('div',{class:'muted mt',text:'開啟前還需要一次排程授權，正式上線前再處理。'}));
  sched.appendChild(el('button',{class:b.triggerOn?'mt danger':'mt',style:'width:100%',text:b.triggerOn?'關閉自動通知':'開啟自動通知',disabled:busy||!b.tokenSet||b.triggerNeedsAuth,on:{click:function(){
   var on=!b.triggerOn;
@@ -457,55 +457,29 @@ function renderBoss(m){
  }}}));
  m.appendChild(sched);
 }
-function mineLateChanged(){var me=S.me;return me.needsLate&&me.lateWindow.open&&S.lateInput.trim()!==''&&(!me.late||Number(S.lateInput)!==me.late.minutes)}
-function mineTodo(){return S.me.items.filter(function(i){return i.confirmable&&i.status.status!=='confirmed'})}
 function renderMine(m){
  var me=S.me;
  if(!me){m.appendChild(el('div',{class:'card muted',text:'正在讀取…'}));return}
  if(me.note)m.appendChild(el('div',{class:'card muted',text:me.note}));
- if(me.items.length)m.appendChild(el('div',{class:'notice warn',text:'請核對自己的資料。數字有問題請先聯絡經理，不要按確認。截止：'+localTime(me.cycle.confirmDeadline)}));
+ if(me.items.length)m.appendChild(el('div',{class:'notice warn',text:'這是系統目前記錄的資料，不需要確認。數字有誤請到 17FIT 補正或向經理反應。'}));
  me.items.forEach(function(it){
-  var st=it.status.status,badge=st==='confirmed'?el('span',{class:'badge',text:'已確認'}):st==='stale'?el('span',{class:'badge stale',text:'資料已更新，請重新確認'}):st==='overdue'?el('span',{class:'badge stale',text:'逾期未確認'}):el('span',{class:'badge todo',text:'待確認'});
-  var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:ITEM_LABELS[it.item]||it.item}),badge));
-  if(it.value&&it.value.missing)card.appendChild(el('div',{class:'muted',text:'經理還沒提供，暫時無法確認。'}));
-  if(it.value&&it.value.pending)card.appendChild(el('div',{class:'muted',text:'要等經理的三項考核，暫時無法確認。'}));
+  var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:ITEM_LABELS[it.item]||it.item}),it.waiting?el('span',{class:'badge todo',text:'等待經理申報中'}):null));
   itemRows(it).forEach(function(r){card.appendChild(el('div',{class:'kv'},el('span',{text:r[0]}),el('b',{text:String(r[1])})))});
-  if(!it.open)card.appendChild(el('div',{class:'muted mt',text:it.reason}));
   m.appendChild(card);
  });
  if(me.needsLate){
   var lc=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:'遲到申報'}),me.late?el('span',{class:'badge',text:'已申報 '+me.late.minutes+' 分鐘'}):el('span',{class:'badge todo',text:'未申報'})));
-  if(me.lateWindow.open)lc.appendChild(field(S,'lateInput','本月遲到合計（分鐘，沒有遲到請填 0）',{type:'number',inputMode:'numeric',step:'1',min:'0',disabled:!!S.saving.mine},'late',function(){renderBar()}));
-  else lc.appendChild(el('div',{class:'muted',text:me.lateWindow.reason}));
+  if(me.lateWindow.open){
+   lc.appendChild(field(S,'lateInput','本月遲到合計（分鐘，沒有遲到請填 0）',{type:'number',inputMode:'numeric',step:'1',min:'0',disabled:!!S.saving.mine},'late',function(){}));
+   lc.appendChild(el('button',{class:'primary mt',text:'儲存',disabled:!!S.saving.mine,on:{click:function(){
+    if(S.lateInput.trim()===''){setMsg('請填遲到分鐘數，沒有遲到請填 0。','bad');render();return}
+    run('mine',function(){return call('portalReportLate',S.token,me.month,Number(S.lateInput))},function(r){me.late=r},'已儲存','正在儲存');
+   }}}));
+  }else lc.appendChild(el('div',{class:'muted',text:me.lateWindow.reason}));
   m.appendChild(lc);
  }
 }
-function renderMineBar(b){
- document.body.className='';
- var me=S.me;if(!me)return;
- var todo=mineTodo(),late=mineLateChanged(),lateMissing=me.needsLate&&me.lateWindow.open&&!me.late&&S.lateInput.trim()==='';
- if(!todo.length&&!late&&!lateMissing&&!S.saving.mine)return;
- document.body.className='has-bar';
- var box=el('div',{class:'bar'});
- if(lateMissing)box.appendChild(el('div',{class:'muted',text:'請先填遲到分鐘數，沒有遲到請填 0。'}));
- var n=todo.length+(late?1:0);
- box.appendChild(S.saving.mine?el('button',{class:'primary',disabled:true},el('span',{class:'spin',style:'margin-right:8px'}),'確認中，請先不要關閉頁面'):el('button',{class:'primary',text:'全部確認（'+n+' 項）',disabled:lateMissing||!n,on:{click:confirmAll}}));
- b.appendChild(box);
-}
-function confirmAll(){
- var me=S.me,todo=mineTodo(),late=mineLateChanged();
- var req={items:todo.map(function(i){return {item:i.item,digest:i.digest}}),lateMinutes:late?Number(S.lateInput):undefined};
- run('mine',function(){return call('portalConfirmAll',S.token,me.month,req)},function(r){
-  var bad=[];
-  r.results.forEach(function(x){
-   var it=me.items.filter(function(i){return i.item===x.item})[0];
-   if(x.ok){if(it)it.status={status:'confirmed',at:x.at}}else bad.push((ITEM_LABELS[x.item]||x.item)+'：'+x.error);
-  });
-  if(r.late){me.late=r.late}
-  if(bad.length)setMsg('有項目沒有確認成功：'+bad.join('；'),'bad');else setMsg('已全部確認，謝謝！');
-  window.scrollTo(0,0);
- },null,'正在送出確認');
-}
+function renderMineBar(){document.body.className=''}
 // Phone photos are shrunk (longest side 2200 px, still readable) so uploads stay quick on mobile data; PDFs and anything the browser can't decode go as they are.
 function preparedFile(file){
  var raw=function(){return new Promise(function(ok,no){var r=new FileReader();r.onerror=function(){no(Error('讀不到這個檔案'))};
@@ -533,7 +507,7 @@ function render(){
  if(v&&S.tab!=='mine'){
   if(!w.correction.open)m.appendChild(el('div',{class:'notice bad',text:'目前不能填報：'+w.correction.reason}));
   else if(!w.initial.open)m.appendChild(el('div',{class:'notice warn',text:w.initial.reason+'。已送出的資料還可以修改，要新增請聯絡管理員。'}));
-  else m.appendChild(el('div',{class:'notice warn',text:'請在 '+localTime(v.cycle.managerDeadline)+' 前填完。'}));
+  else m.appendChild(el('div',{class:'notice warn',text:'請儘快填完，教練和副理才看得到完整資料。'}));
  }
  if(S.msg)m.appendChild(el('div',{class:'notice '+(S.msg.kind==='bad'?'bad':'good'),text:S.msg.text}));
  if(v&&S.tab!=='mine'&&v.branches.length>1){
