@@ -101,12 +101,13 @@ function evalPayload(v){
  var p={failReasons:{}};
  EVAL_ITEMS.forEach(function(i){var k=i[0];p[k]=v[k];if(v[k]==='不合格'&&failReason(v,k))p.failReasons[k]=failReason(v,k)});
  if(!Object.keys(p.failReasons).length)delete p.failReasons;
+ p.lateMinutes=Number(v.lateMinutes)||0;
  return p;
 }
-function evalKey(v){return JSON.stringify(EVAL_ITEMS.map(function(i){return [v[i[0]]||'',v[i[0]]==='不合格'?failReason(v,i[0]):'']}))}
+function evalKey(v){return JSON.stringify(EVAL_ITEMS.map(function(i){return [v[i[0]]||'',v[i[0]]==='不合格'?failReason(v,i[0]):'']}).concat([Number(v.lateMinutes)||0]))}
 var TABS=[['coach','教練'],['visiting','跑課'],['instructor','教官'],['mine','我的資料']];
 var LABELS={partTime:'兼職教練',visiting:'跑課老師',instructor:'教官課程'};
-var S={progress:null,boss:null,tokenInput:'',me:null,lateInput:'',token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
+var S={progress:null,boss:null,tokenInput:'',me:null,token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
 function picked(id){return S.picked[id]||(S.picked[id]=[])}
 function refreshBusy(){
  var n=savingCount(),box=document.getElementById('busy');
@@ -196,6 +197,9 @@ function coachCard(s){
     card.appendChild(field(d.values.failReasons,i[0],i[1]+'不合格原因（必填）',{disabled:busy},id+':why',touch));
    }
   });
+  if(d.values.lateMinutes===undefined||d.values.lateMinutes===null)d.values.lateMinutes='0';
+  else d.values.lateMinutes=String(d.values.lateMinutes);
+  card.appendChild(field(d.values,'lateMinutes','本月遲到（分鐘，沒有遲到就留 0）',{type:'number',inputMode:'numeric',step:'1',min:'0',disabled:busy},id+':late',touch));
  }else{
   card.appendChild(el('div',{class:'two'},
    field(d,'hours','一般工時（小時）',{type:'number',inputMode:'decimal',step:'0.5',min:'0',disabled:busy},id,touch),
@@ -384,13 +388,13 @@ function submitForm(f){
  },function(r){mergeSaved(r);S.form=null},english+' 已送出',hasPhotos?'正在處理相片':'正在儲存');
 }
 // ---------- personal data: told, not asked to confirm ----------
-var ITEM_LABELS={stats:'上課統計',leave:'請假紀錄',evaluation:'三項考核',specialBonus:'特殊獎金',partTimeHours:'兼職工時',instructorFee:'教官費',managerRevenue:'分店營業額',managerStats:'我的上課統計'};
+var ITEM_LABELS={stats:'上課統計',leave:'請假紀錄',evaluation:'三項考核與遲到',specialBonus:'特殊獎金',partTimeHours:'兼職工時',instructorFee:'教官費',managerRevenue:'分店營業額',managerStats:'我的上課統計'};
 function money(n){return Number(n).toLocaleString('en-US')+' 元'}
 function itemRows(it){
  var v=it.value||{},r=[];
  if(it.item==='stats'||it.item==='managerStats'){r=[['團課人次',v.groupAttendance],['一對一（堂）',v.private1v1],['一對二（堂）',v.private1v2]];if(v.note)r.push([v.note,''])}
  if(it.item==='leave'){r=[['病假（小時）',v.sickHours],['事假（小時）',v.personalHours]];(v.items||[]).forEach(function(x){r.push([String(x),''])})}
- if(it.item==='evaluation'&&!v.missing){EVAL_ITEMS.forEach(function(i){r.push([i[1],v[i[0]]]);if(failReason(v,i[0]))r.push(['不合格原因：'+failReason(v,i[0]),''])});r.push(['達標狀況',v.tier]);if(v.note)r.push([v.note,''])}
+ if(it.item==='evaluation'&&!v.missing){EVAL_ITEMS.forEach(function(i){r.push([i[1],v[i[0]]]);if(failReason(v,i[0]))r.push(['不合格原因：'+failReason(v,i[0]),''])});r.push(['達標狀況',v.tier]);r.push(['本月遲到（分鐘）',v.lateMinutes||0]);if(v.note)r.push([v.note,''])}
  if(it.item==='specialBonus'){(v.lines||[]).forEach(function(x){r.push([x.item+(x.basis?'（'+x.basis+'）':''),money(x.amount)])});r.push(['合計',money(v.total||0)]);if(v.note)r.push([v.note,''])}
  if(it.item==='partTimeHours')r=[['分店',v.branch],['一般工時（小時）',v.hours],['國定假日工時（小時）',v.holidayHours]];
  if(it.item==='instructorFee')(v.lines||[]).forEach(function(x){r.push([x.course+'（'+x.hours+' 小時 × '+x.headcount+' 人 × '+x.rate+' 元）',money(x.fee)])});
@@ -467,17 +471,6 @@ function renderMine(m){
   itemRows(it).forEach(function(r){card.appendChild(el('div',{class:'kv'},el('span',{text:r[0]}),el('b',{text:String(r[1])})))});
   m.appendChild(card);
  });
- if(me.needsLate){
-  var lc=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:'遲到申報'}),me.late?el('span',{class:'badge',text:'已申報 '+me.late.minutes+' 分鐘'}):el('span',{class:'badge todo',text:'未申報'})));
-  if(me.lateWindow.open){
-   lc.appendChild(field(S,'lateInput','本月遲到合計（分鐘，沒有遲到請填 0）',{type:'number',inputMode:'numeric',step:'1',min:'0',disabled:!!S.saving.mine},'late',function(){}));
-   lc.appendChild(el('button',{class:'primary mt',text:'儲存',disabled:!!S.saving.mine,on:{click:function(){
-    if(S.lateInput.trim()===''){setMsg('請填遲到分鐘數，沒有遲到請填 0。','bad');render();return}
-    run('mine',function(){return call('portalReportLate',S.token,me.month,Number(S.lateInput))},function(r){me.late=r},'已儲存','正在儲存');
-   }}}));
-  }else lc.appendChild(el('div',{class:'muted',text:me.lateWindow.reason}));
-  m.appendChild(lc);
- }
 }
 function renderMineBar(){document.body.className=''}
 // Phone photos are shrunk (longest side 2200 px, still readable) so uploads stay quick on mobile data; PDFs and anything the browser can't decode go as they are.
@@ -518,7 +511,7 @@ function render(){
  if(v){
   var tabs=el('div',{class:'tabs'});
   TABS.forEach(function(t){tabs.appendChild(el('button',{class:'tab'+(t[0]===S.tab?' on':''),text:t[1],on:{click:function(){S.tab=t[0];S.form=null;S.withdrawing=null;setMsg('');
-   if(t[0]==='mine'&&!S.me&&!S.saving.me)run('me',function(){return call('portalMyBasis',S.token,v.month)},function(r){S.me=r;S.lateInput=r.late?String(r.late.minutes):''},null,'正在讀取');
+   if(t[0]==='mine'&&!S.me&&!S.saving.me)run('me',function(){return call('portalMyBasis',S.token,v.month)},function(r){S.me=r},null,'正在讀取');
    render()}}}))});
   m.appendChild(tabs);
  }
@@ -549,7 +542,7 @@ else{step='liff.init';liff.init({liffId:LIFF_ID}).then(function(){
    loadDrafts();render();
    return;
   }
-  S.tab='mine';S.me=h.mine;S.lateInput=h.mine.late?String(h.mine.late.minutes):'';render();
+  S.tab='mine';S.me=h.mine;render();
  });
 }).catch(fail)}
 </script>
