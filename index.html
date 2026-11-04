@@ -105,7 +105,7 @@ function evalPayload(v){
  return p;
 }
 function evalKey(v){return JSON.stringify(EVAL_ITEMS.map(function(i){return [v[i[0]]||'',v[i[0]]==='不合格'?failReason(v,i[0]):'']}).concat([Number(v.lateMinutes)||0]))}
-var TABS=[['coach','教練'],['visiting','跑課'],['instructor','教官'],['mine','我的資料']];
+var TABS=[['confirm','營業額與確認'],['coach','教練'],['visiting','跑課'],['instructor','教官']];
 var LABELS={partTime:'兼職教練',visiting:'跑課老師',instructor:'教官課程'};
 var S={progress:null,boss:null,tokenInput:'',me:null,token:'',view:null,branch:'',tab:'coach',drafts:{},picked:{},errors:{},form:null,msg:null,withdrawing:null,withdrawReason:'',saving:{},phase:'',since:0,queue:Promise.resolve(),storeKey:''};
 function picked(id){return S.picked[id]||(S.picked[id]=[])}
@@ -413,11 +413,11 @@ function renderProgress(m){
  m.appendChild(el('div',{class:'row mb'},el('b',{text:Number(p.month.slice(5))+' 月薪資'}),
   el('button',{class:'link',text:'重新整理',disabled:!!S.saving.progress,on:{click:function(){run('progress',function(){return call('portalBossProgress',S.token)},function(r){S.progress=r},null,'正在讀取進度')}}})));
  var waiting=p.managers.filter(function(x){return !x.done});
- m.appendChild(el('div',{class:'notice '+(!waiting.length?'good':'warn'),text:!waiting.length?'經理都申報完了。':'還沒申報完：'+waiting.map(function(x){return x.english}).join('、')+'。沒申報的部分，教練和副理會看到「等待經理申報中」。'}));
+ m.appendChild(el('div',{class:'notice '+(!waiting.length?'good':'warn'),text:!waiting.length?'經理都確認申報了。':'還沒確認申報：'+waiting.map(function(x){return x.english}).join('、')+'。經理確認後，他的教練和副理才會收到通知。'}));
  if(!p.basisReady)m.appendChild(el('div',{class:'notice warn',text:'本月計薪依據還沒產生，通知還沒發出。'}));
  var STATE={fullTime:'全職，已填',partTime:'兼職，已填',missing:'未填'};
  p.managers.forEach(function(x){
-  var c=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:x.english}),el('span',{class:x.done?'badge':'badge edit',text:x.done?'已完成':'未完成'})));
+  var c=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:x.english}),el('span',{class:x.done?'badge':'badge edit',text:x.done?'已確認申報':x.stale?'確認後有修改':x.filled?'填完，還沒確認':'未完成'})));
   if(!x.bound)c.appendChild(el('div',{class:'err',style:'font-size:14px',text:'尚未綁定 LINE，收不到通知。'}));
   var row=function(l,v,bad){c.appendChild(el('div',{class:'kv'},el('span',{text:l}),el('b',{text:String(v),class:bad?'err':''})))};
 
@@ -433,7 +433,7 @@ function renderProgress(m){
   m.appendChild(c);
  });
  if(p.notBound.length)m.appendChild(el('div',{class:'notice bad',text:'尚未綁定 LINE：'+p.notBound.join('、')}));
- m.appendChild(el('div',{class:'muted',style:'margin:0 2px',text:'其他人員 5 日收到通知，經理申報後會自動補發。要不要接著往下做，請到電腦版薪資系統第 1 步查看通知狀況後決定。'}));
+ m.appendChild(el('div',{class:'muted',style:'margin:0 2px',text:'經理按確認申報後，他的教練和副理會立刻收到通知。要不要接著往下做，請到電腦版薪資系統第 1 步查看通知狀況後決定。'}));
 }
 // ---------- the owner's notification settings ----------
 function renderBoss(m){
@@ -453,7 +453,7 @@ function renderBoss(m){
  }}}));
  m.appendChild(testCard);
  var sched=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:'每月自動通知'}),el('span',{class:b.triggerOn?'badge':'badge todo',text:b.triggerOn?'開啟':'關閉'})));
- sched.appendChild(el('div',{class:'muted',text:'開啟後，每月 3 日通知經理、5 日通知其他人員，資料有更新時自動補發。'+(b.testMode?'目前是測試期間，只會傳給允許名單內的人。':'')}));
+ sched.appendChild(el('div',{class:'muted',text:'開啟後，每月 1 日通知經理可以開始申報，4 日提醒還沒確認的經理，資料有更新時自動補發。'+(b.testMode?'目前是測試期間，只會傳給允許名單內的人。':'')}));
  if(b.triggerNeedsAuth)sched.appendChild(el('div',{class:'muted mt',text:'開啟前還需要一次排程授權，正式上線前再處理。'}));
  sched.appendChild(el('button',{class:b.triggerOn?'mt danger':'mt',style:'width:100%',text:b.triggerOn?'關閉自動通知':'開啟自動通知',disabled:busy||!b.tokenSet||b.triggerNeedsAuth,on:{click:function(){
   var on=!b.triggerOn;
@@ -465,7 +465,7 @@ function renderMine(m){
  var me=S.me;
  if(!me){m.appendChild(el('div',{class:'card muted',text:'正在讀取…'}));return}
  if(me.note)m.appendChild(el('div',{class:'card muted',text:me.note}));
- if(me.items.length)m.appendChild(el('div',{class:'notice warn',text:'這是系統目前記錄的資料，不需要確認。數字有誤請到 17FIT 補正或向經理反應。'}));
+ if(me.items.length)m.appendChild(el('div',{class:'notice warn',text:'這是系統目前記錄的資料，不需要回覆。數字有誤請到 17FIT 補正或向經理反應。'}));
  me.items.forEach(function(it){
   var card=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:ITEM_LABELS[it.item]||it.item}),it.waiting?el('span',{class:'badge todo',text:'等待經理申報中'}):null));
   itemRows(it).forEach(function(r){card.appendChild(el('div',{class:'kv'},el('span',{text:r[0]}),el('b',{text:String(r[1])})))});
@@ -473,6 +473,53 @@ function renderMine(m){
  });
 }
 function renderMineBar(){document.body.className=''}
+// ---------- the manager's revenue, 確認申報 and preview ----------
+function renderConfirm(m){
+ var v=S.view,p=v.progress||{branches:[]},busy=savingCount()>0,open=v.windows.provide.open;
+ var head=el('div',{class:'card'},el('h3',{text:'營業額與上課統計'}),el('div',{class:'muted',text:v.lastDownload?'17FIT 資料下載時間：'+localTime(v.lastDownload):'本月還沒下載 17FIT 資料。請先到 17FIT 檢查、補正，再按下方的下載。'}));
+ if(!v.mine.items.length)head.appendChild(el('div',{class:'muted mt',text:v.mine.note||'還沒有本月資料'}));
+ v.mine.items.forEach(function(it){
+  head.appendChild(el('div',{style:'font-weight:600;margin-top:10px',text:ITEM_LABELS[it.item]||it.item}));
+  itemRows(it).forEach(function(r){head.appendChild(el('div',{class:'kv'},el('span',{text:r[0]}),el('b',{text:String(r[1])})))});
+ });
+ if(open)head.appendChild(el('div',{class:'muted mt',text:'教練的上課人次或堂數在 17FIT 補正後，可以重新下載；確認申報後，資料有變動的人會再收到通知。下載約需幾分鐘。6 日之後，已確認申報就不能再修改或重新下載。'}));
+ else head.appendChild(el('div',{class:'muted mt',text:v.windows.provide.reason}));
+ head.appendChild(el('button',{class:'mt',style:'width:100%',text:v.lastDownload?'重新下載 17FIT 資料':'下載 17FIT 資料',disabled:busy||!open,on:{click:function(){
+  if(!window.confirm('下載 17FIT 資料？約需幾分鐘。'))return;
+  run('confirm',function(){return call('portalManagerRefresh',S.token,v.month)},function(r){S.view=r.view;S.preview=null;setMsg(r.told.length?'已更新，已通知資料有變動的人：'+r.told.join('、'):'已更新，沒有人需要再通知。')},null,'正在下載 17FIT 資料，約需幾分鐘，請先不要關閉頁面');
+ }}}));
+ m.appendChild(head);
+ var c=el('div',{class:'card'},el('h3',{text:'申報進度'}));
+ p.branches.forEach(function(b){
+  var left=b.coaches.filter(function(k){return k.state==='missing'}).map(function(k){return k.english});
+  if(!b.visiting&&!b.visitingNone)left.push('跑課');
+  if(!b.instructors&&!b.instructorNone)left.push('教官');
+  c.appendChild(el('div',{class:'kv'},el('span',{text:b.branch}),el('b',{class:left.length?'err':'',text:left.length?'還沒填：'+left.join('、'):'已填完'})));
+ });
+ if(p.stale)c.appendChild(el('div',{class:'notice warn mt',text:'確認後有修改，按下確認申報才會通知教練和副理。'}));
+ else if(p.confirmed)c.appendChild(el('div',{class:'notice good mt',text:'已於 '+localTime(p.confirmedAt)+' 確認申報，教練和副理已收到通知。'}));
+ if(!p.confirmed){
+  c.appendChild(el('div',{class:'muted mt',text:'請確認營業額無誤、申報資料都填好後再按。按下後會立刻用 LINE 通知您的教練和副理；6 日之後確認就不能再修改。'}));
+  c.appendChild(el('button',{class:'primary mt',text:'確認申報',disabled:busy||!v.windows.confirm.open||!p.filled,on:{click:function(){
+   if(!window.confirm('確認營業額無誤、申報資料都已填好？按下後會通知您的教練和副理。'))return;
+   run('confirm',function(){return call('portalManagerConfirm',S.token,v.month)},function(r){S.view=r.view;S.preview=null;setMsg('已確認申報，已通知 '+r.told.length+' 人。')},null,'正在確認申報並通知教練，請先不要關閉頁面');
+  }}}));
+ }
+ m.appendChild(c);
+ if(p.confirmedAt){
+  var pc=el('div',{class:'card'},el('h3',{text:'應發薪資預覽'}),el('div',{class:'muted',text:'依目前資料計算，不含缺勤扣款和代扣勞健保，實際金額以薪資單為準。'}));
+  pc.appendChild(el('button',{class:'mt',style:'width:100%',text:S.preview?'重新計算':'預覽所屬教練的應發薪資',disabled:busy,on:{click:function(){
+   run('confirm',function(){return call('portalManagerPreview',S.token,v.month)},function(r){S.preview=r},null,'正在計算');
+  }}}));
+  m.appendChild(pc);
+  if(S.preview)S.preview.rows.forEach(function(r){
+   var pr=el('div',{class:'card'},el('div',{class:'row'},el('h3',{text:r.english+'（'+r.branch+'）'}),el('b',{class:r.error?'err':'',text:r.error?'無法計算':money(r.gross)})));
+   if(r.error)pr.appendChild(el('div',{class:'err',text:r.error}));
+   (r.lines||[]).forEach(function(l){pr.appendChild(el('div',{class:'kv'},el('span',{text:l.label+(l.calc?'（'+l.calc+'）':'')}),el('b',{text:money(Math.round(l.amount))})))});
+   m.appendChild(pr);
+  });
+ }
+}
 // Phone photos are shrunk (longest side 2200 px, still readable) so uploads stay quick on mobile data; PDFs and anything the browser can't decode go as they are.
 function preparedFile(file){
  var raw=function(){return new Promise(function(ok,no){var r=new FileReader();r.onerror=function(){no(Error('讀不到這個檔案'))};
@@ -498,12 +545,11 @@ function render(){
  if(focusId)try{caret=a.selectionStart}catch(e){}
  var m=document.getElementById('main'),v=S.view,w=v&&v.windows;m.textContent='';
  if(v&&S.tab!=='mine'){
-  if(!w.correction.open)m.appendChild(el('div',{class:'notice bad',text:'目前不能填報：'+w.correction.reason}));
-  else if(!w.initial.open)m.appendChild(el('div',{class:'notice warn',text:w.initial.reason+'。已送出的資料還可以修改，要新增請聯絡管理員。'}));
-  else m.appendChild(el('div',{class:'notice warn',text:'請儘快填完，教練和副理才看得到完整資料。'}));
+  if(!w.provide.open)m.appendChild(el('div',{class:'notice bad',text:'目前不能填報：'+w.provide.reason}));
+  else if(!(v.progress&&v.progress.confirmed))m.appendChild(el('div',{class:'notice warn',text:'請儘快填完，教練和副理才看得到完整資料。'}));
  }
  if(S.msg)m.appendChild(el('div',{class:'notice '+(S.msg.kind==='bad'?'bad':'good'),text:S.msg.text}));
- if(v&&S.tab!=='mine'&&v.branches.length>1){
+ if(v&&S.tab!=='confirm'&&v.branches.length>1){
   var chips=el('div',{class:'chips'});
   v.branches.forEach(function(b){chips.appendChild(el('button',{class:'chip'+(b===S.branch?' on':''),text:b,on:{click:function(){S.branch=b;S.form=null;S.withdrawing=null;setMsg('');render()}}}))});
   m.appendChild(chips);
@@ -511,12 +557,12 @@ function render(){
  if(v){
   var tabs=el('div',{class:'tabs'});
   TABS.forEach(function(t){tabs.appendChild(el('button',{class:'tab'+(t[0]===S.tab?' on':''),text:t[1],on:{click:function(){S.tab=t[0];S.form=null;S.withdrawing=null;setMsg('');
-   if(t[0]==='mine'&&!S.me&&!S.saving.me)run('me',function(){return call('portalMyBasis',S.token,v.month)},function(r){S.me=r},null,'正在讀取');
+   if(t[0]==='confirm'&&!savingCount())run('view',function(){return call('portalManagerView',S.token,v.month)},function(r){S.view=r},null,'正在讀取');
    render()}}}))});
   m.appendChild(tabs);
  }
  if(S.boss)bossTabs(m);
- if(S.tab==='progress')renderProgress(m);else if(S.tab==='boss')renderBoss(m);else if(S.tab==='mine')renderMine(m);else if(S.tab==='coach')renderCoach(m);else renderLines(m,S.tab);
+ if(S.tab==='progress')renderProgress(m);else if(S.tab==='boss')renderBoss(m);else if(S.tab==='mine')renderMine(m);else if(S.tab==='confirm')renderConfirm(m);else if(S.tab==='coach')renderCoach(m);else renderLines(m,S.tab);
  renderBar();refreshBusy();
  if(focusId){
   var again=m.querySelector('[data-f="'+focusId.replace(/"/g,'')+'"]');
@@ -534,11 +580,11 @@ else{step='liff.init';liff.init({liffId:LIFF_ID}).then(function(){
  step='讀取資料';showStep('正在讀取資料…');
  return call('portalHome',token).then(function(h){
   done=true;clearTimeout(timer);
-  show(h.english+'｜'+h.month.replace('-','年')+'月計薪資料'+(h.basisReady===false?'（管理員尚未產生計薪依據）':''));
+  show(h.english+'｜'+h.month.replace('-','年')+'月計薪資料');
   window.PORTAL={token:token,home:h};
   if(h.boss){show(h.english+'｜老闆');S.tab='progress';S.boss=h.boss;S.progress=h.progress;render();return}
   if(h.manager){
-   S.view=h.manager;S.branch=h.manager.branches[0]||'';S.storeKey='ezdon_drafts_'+h.month+'_'+h.english;
+   S.view=h.manager;S.tab='confirm';S.branch=h.manager.branches[0]||'';S.storeKey='ezdon_drafts_'+h.month+'_'+h.english;
    loadDrafts();render();
    return;
   }
