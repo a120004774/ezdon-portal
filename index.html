@@ -485,16 +485,21 @@ function renderMineBar(){document.body.className=''}
 // ---------- the manager's revenue, 確認申報 and preview ----------
 function renderConfirm(m){
  var v=S.view,p=v.progress||{branches:[]},busy=savingCount()>0,open=v.windows.provide.open;
- var head=el('div',{class:'card'},el('h3',{text:'營業額與上課統計'}),el('div',{class:'muted',text:v.lastDownload?'17FIT 資料下載時間：'+localTime(v.lastDownload):'本月還沒下載 17FIT 資料。請先到 17FIT 檢查、補正，再按下方的下載。'}));
+ var by=v.lastDownloadBy==='系統自動下載'?'系統自動下載':v.lastDownloadBy?v.lastDownloadBy+' 下載':'';
+ var head=el('div',{class:'card'},el('h3',{text:'營業額與上課統計'}),v.lastDownload
+  ?el('div',{class:'notice good',text:'✓ 本月 17FIT 資料已備妥（'+(by?by+'，':'')+localTime(v.lastDownload)+'），不需要再下載。'})
+  :el('div',{class:'notice warn',text:'本月還沒有 17FIT 資料。請先到 17FIT 檢查、補正，再按下方的「下載 17FIT 資料」（只要一位經理按）。'}));
  if(!v.mine.items.length)head.appendChild(el('div',{class:'muted mt',text:v.mine.note||'還沒有本月資料'}));
  v.mine.items.forEach(function(it){
   head.appendChild(el('div',{style:'font-weight:600;margin-top:10px',text:ITEM_LABELS[it.item]||it.item}));
   itemRows(it).forEach(function(r){head.appendChild(el('div',{class:'kv'},el('span',{text:r[0]}),el('b',{text:String(r[1])})))});
  });
- if(open)head.appendChild(el('div',{class:'muted mt',text:'教練的上課人次或堂數在 17FIT 補正後，可以重新下載；確認申報後，資料有變動的人會再收到通知。下載約需幾分鐘。6 日之後，已確認申報就不能再修改或重新下載。'}));
+ if(open)head.appendChild(el('div',{class:'muted mt',text:v.lastDownload
+  ?'只有在 17FIT 補正了教練的上課人次、堂數或營業額時，才需要按下方「重新下載」；確認申報後，資料有變動的人會再收到通知。下載約需幾分鐘。6 日之後，已確認申報就不能再修改或重新下載。'
+  :'下載約需幾分鐘。6 日之後，已確認申報就不能再修改或重新下載。'}));
  else head.appendChild(el('div',{class:'muted mt',text:v.windows.provide.reason}));
- head.appendChild(el('button',{class:'mt',style:'width:100%',text:v.lastDownload?'重新下載 17FIT 資料':'下載 17FIT 資料',disabled:busy||!open,on:{click:function(){
-  if(!window.confirm('下載 17FIT 資料？約需幾分鐘。'))return;
+ head.appendChild(el('button',{class:v.lastDownload?'mt link':'mt primary',style:'width:100%',text:v.lastDownload?'17FIT 有補正？重新下載':'下載 17FIT 資料',disabled:busy||!open,on:{click:function(){
+  if(!window.confirm(v.lastDownload?'本月 17FIT 資料已經有了。只有 17FIT 補正過才需要重新下載，確定要重新下載嗎？（約需幾分鐘）':'下載 17FIT 資料？約需幾分鐘。'))return;
   run('confirm',function(){return call('portalManagerRefresh',S.token,v.month)},function(r){S.view=r.view;S.preview=null;setMsg(r.told.length?'已更新，已通知資料有變動的人：'+r.told.join('、'):'已更新，沒有人需要再通知。')},null,'正在下載 17FIT 資料，約需幾分鐘，請先不要關閉頁面');
  }}}));
  m.appendChild(head);
