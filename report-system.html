@@ -765,7 +765,7 @@ function goTo(g){
   if (/^R\d{4}-\d{1,4}$/.test(g)) {
     if (me.role === 'ADMIN') { $('q-status').value = ''; $('q-match').value = ''; $('q-branch').value = ''; $('q-from').value = ''; $('q-to').value = ''; $('q-q').value = g; show('all'); loadAll(); }
     else show('mine');
-  } else if (g === 'pending' && me.role === 'ADMIN') show('pending');
+  } else if ((g === 'pending' || g === 'mgr') && me.role === 'ADMIN') show('pending');
   else if ((g === 'pending' || g === 'mgr') && me.role === 'MANAGER') show('mgr');
   else if (g === 'ca' && me.ca && me.ca.view) show('ca');
   else if (g === 'sched' && me.role === 'ADMIN') show('sched');
