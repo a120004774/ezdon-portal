@@ -636,6 +636,7 @@
 
     <!-- 帳號 -->
     <div id="sys-acc" class="sys-pane hidden">
+      <h2 style="margin:14px 0 4px">經理／管理員帳號</h2>
       <div class="card">
         <h2>新增／修改帳號</h2>
         <div class="row">
@@ -656,6 +657,8 @@
         <div style="margin-top:10px"><button class="btn" id="btnAcc">儲存</button></div>
       </div>
       <div id="accList"></div>
+      <h2 style="margin:22px 0 4px">教練帳號（電子簽署系統・課務營運稽核系統共用）</h2>
+      <div id="accCoachSlot"></div>
     </div>
 
     <!-- 我的密碼 -->
@@ -793,11 +796,12 @@ function navTabs(){
   var me = S.boot.me;
   if (me.role === 'COACH') return [['new','報備'],['newapp','申請'],['mine','我的記錄']];
   if (me.role === 'MANAGER') return [['mgr','待核准'],['new','報備'],['newapp','申請'],['mine','我的記錄'],['coach','教練帳號']];
-  var tabs = [['new','報備'],['newapp','申請'],['mine','我的記錄'],['pending','待核准'],['all','報備/申請記錄']];
+  // 管理員（2026-11-25 業主）：不需要「我的記錄」；教練帳號放在系統維護 → 帳號（下半部）
+  var tabs = [['new','報備'],['newapp','申請'],['pending','待核准'],['all','報備/申請記錄']];
   if (me.ca && me.ca.view) tabs.push(['ca','稽核結果']);
   // 課表發佈只給管理員（2026-11-24 業主：經理看到的是不會顯示內容的空分頁）
   if (me.sched) tabs.push(['sched','課表發佈']);
-  return tabs.concat([['coach','教練帳號'],['sys','系統維護']]);
+  return tabs.concat([['sys','系統維護']]);
 }
 function buildNav(){
   var tabs = navTabs();
@@ -2412,7 +2416,13 @@ function sysShow(p){
   Array.prototype.forEach.call($('sysSeg').children, function(b){ b.classList.toggle('on', b.dataset.p === p); });
   if (p === 'ca') caLoadRuns();
   if (p === 'fit') { fmLoadState(); robotLoadSettings(); fitLoadRuns(); }
-  if (p === 'acc') loadAcc();
+  if (p === 'acc') {
+    loadAcc();
+    // 系統維護 → 帳號：上半經理／管理員帳號，下半教練帳號管理（和經理的「教練帳號」分頁是同一份畫面）
+    var vc = $('v-coach');
+    if (vc && vc.parentNode !== $('accCoachSlot')) $('accCoachSlot').appendChild(vc);
+    if (vc) { vc.classList.remove('hidden'); loadCoach(); }
+  }
   if (p === 'gc') gcLoadSys();
   if (p === 'att') { attLoad(); attLoadLog(); }
   if (p === 'va') vaLoadSys();
