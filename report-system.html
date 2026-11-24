@@ -97,21 +97,32 @@
   :root{--brand:#2f6feb;--ink:#1f2937;--muted:#6b7280;--bg:#f6f7fb;--card:#fff;--line:#e5e7eb;
         --ok:#16a34a;--warn:#d97706;--bad:#dc2626;--soft:#f3f4f6}
   *{box-sizing:border-box}
-  body{margin:0;font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);font-size:15px}
-  header{background:var(--brand);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
-  header h1{font-size:16px;margin:0}
-  header button{background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:8px;padding:6px 10px}
-  main{max-width:820px;margin:0 auto;padding:12px 16px 80px}
-  nav{display:flex;gap:6px;overflow-x:auto;padding:8px 16px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:46px;z-index:4}
-  nav button{flex:none;border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-size:14px;color:var(--ink)}
-  nav button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  /* 2026-11-25 視覺統一（櫃檯系統樣本）：課務營運稽核系統＝深靛藍＋細格線；電子簽署系統＝青綠＋斜線。排版和電子簽署相同：
+     頂端色帶（標題、登入者、登出）、底線式分頁、白卡片、大輸入框 */
+  :root{--brand:#2E3F8F;--brand-dark:#1F2C6B;--brand-soft:#E8ECF8;--ink:#1C2430;--muted:#5B6573;--bg:#F4F6F8;--line:#E2E6EA}
+  body{margin:0;font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",sans-serif;color:var(--ink);font-size:15px;
+    background-color:var(--bg);background-image:repeating-linear-gradient(0deg,rgba(46,63,143,.035) 0 1px,transparent 1px 28px),repeating-linear-gradient(90deg,rgba(46,63,143,.035) 0 1px,transparent 1px 28px)}
+  header{color:#fff;display:flex;justify-content:space-between;align-items:center;gap:10px;padding:18px max(16px,calc((100% - 888px) / 2));
+    background-color:var(--brand);background-image:repeating-linear-gradient(0deg,rgba(255,255,255,.09) 0 1px,transparent 1px 14px),repeating-linear-gradient(90deg,rgba(255,255,255,.09) 0 1px,transparent 1px 14px)}
+  header h1{font-size:22px;margin:0;font-weight:700}
+  header #who{display:block;font-size:13px;font-weight:400;color:#DDE3F6;margin-top:4px}
+  header button{flex:none;background:rgba(255,255,255,.14);color:#fff;border:1px solid rgba(255,255,255,.55);border-radius:10px;padding:8px 14px;font-size:15px;min-height:40px}
+  @media (max-width:560px){ header h1{font-size:18px} header .org{display:none} }
+  main{max-width:920px;margin:0 auto;padding:12px 16px 80px}
+  nav{display:flex;overflow-x:auto;padding:0 max(16px,calc((100% - 888px) / 2));background:rgba(244,246,248,.97);border-bottom:1px solid #D5DBE1;position:sticky;top:0;z-index:4}
+  nav button{flex:1 0 auto;border:0;border-bottom:3px solid transparent;background:transparent;border-radius:0;padding:12px 10px;font-size:15px;color:var(--muted);white-space:nowrap}
+  nav button.on{color:var(--brand);border-bottom-color:var(--brand);font-weight:700}
+  nav .cnt{display:inline-block;min-width:20px;padding:0 6px;margin-left:4px;border-radius:999px;background:#C2410C;color:#fff;font-size:12px;font-weight:700;line-height:18px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
-  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+  .card h2,main>section>h2{color:var(--brand)}
+  label{display:block;font-size:14px;color:var(--ink);margin:10px 0 4px}
   label .req{color:var(--bad)}
-  input,select,textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;background:#fff;color:var(--ink)}
+  input,select,textarea{width:100%;padding:12px;border:1px solid #CBD2D9;border-radius:10px;font-size:15px;background:#fff;color:var(--ink)}
+  input:focus,select:focus,textarea:focus{outline:2px solid var(--brand-soft);border-color:var(--brand)}
   textarea{min-height:70px}
-  .btn{display:inline-block;border:0;border-radius:8px;padding:10px 16px;font-size:15px;background:var(--brand);color:#fff;cursor:pointer}
-  .btn.sec{background:var(--soft);color:var(--ink)}
+  .btn{display:inline-block;border:1px solid var(--brand);border-radius:10px;padding:12px 18px;font-size:15px;background:var(--brand);color:#fff;cursor:pointer;min-height:44px}
+  .btn.sec{background:#fff;color:var(--ink);border-color:#CBD2D9}
+  .btn.ok{border-color:var(--ok)} .btn.bad{border-color:var(--bad)}
   .btn.ok{background:var(--ok)} .btn.bad{background:var(--bad)}
   .btn:disabled{opacity:.5}
   /* 2026-11-23 業主：系統執行中要有動畫（按鈕轉圈、畫面上方跑馬條＋「系統處理中」） */
@@ -132,12 +143,12 @@
   .msg{padding:10px;border-radius:8px;margin:10px 0}
   .msg.ok{background:#dcfce7}.msg.err{background:#fee2e2}
   /* 浮動提示（2026-11-24 業主）：浮在畫面上方，幾秒後自動消失；換分頁、選了其他項目或按 × 也會消失 */
-  #flash{position:fixed;left:50%;top:108px;transform:translateX(-50%);width:calc(100% - 32px);max-width:640px;z-index:30;pointer-events:none}
+  #flash{position:fixed;left:50%;top:64px;transform:translateX(-50%);width:calc(100% - 32px);max-width:640px;z-index:30;pointer-events:none}
   #flash .msg{margin:0;display:flex;gap:10px;align-items:flex-start;box-shadow:0 6px 18px rgba(0,0,0,.18);pointer-events:auto;animation:ezfade .2s ease-out}
   #flash .msg span{flex:1}
   #flash .msg button{background:none;border:0;padding:0 4px;font-size:18px;line-height:1;cursor:pointer;color:#374151;width:auto}
   @keyframes ezfade{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
-  .hint{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px;font-size:13px;margin-top:10px}
+  .hint{background:#F4F6FB;border:1px solid #D9DFF0;border-radius:10px;padding:10px;font-size:13px;margin-top:10px;color:var(--brand-dark)}
   .hint:empty{display:none}
   .picks{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
   .picks:empty{display:none}
@@ -183,7 +194,7 @@
 </head>
 <body>
 <div id="busyBar"></div><div id="busyPill">系統處理中…</div>
-<header><h1>課務營運稽核系統</h1><div><span id="who" class="muted" style="color:#dbeafe"></span> <button id="btnLogout" class="hidden">登出</button></div></header>
+<header><h1><span class="org">一起動健身學院 </span>課務營運稽核系統<span id="who"></span></h1><button id="btnLogout" class="hidden">登出</button></header>
 <nav id="nav" class="hidden"></nav>
 <main>
   <div id="flash"></div>
@@ -193,19 +204,27 @@
   <section id="v-login" class="card">
     <h2>登入</h2>
     <div id="lg-line" class="msg ok hidden"></div>
-    <label>帳號</label><input id="lg-acc" autocomplete="username">
+    <label>帳號（教練請用電子簽約系統的手機帳號）</label><input id="lg-acc" autocomplete="username">
     <label>密碼</label><input id="lg-pwd" type="password" autocomplete="current-password">
     <label style="display:flex;gap:6px;align-items:center;font-weight:normal;margin-top:10px"><input type="checkbox" id="lg-keep" style="width:auto">保持登入（30 天內不用再輸入密碼；共用電腦請勿勾選）</label>
     <div style="margin-top:14px"><button class="btn" id="btnLogin">登入</button></div>
+    <p class="muted" style="margin-top:10px">經理請從自己手機的 LINE 開啟系統（經理沒有帳密登入）。</p>
+    <!-- 2026-11-25：經理第一次從 LINE 開啟時，輸入老闆給的綁定碼 -->
+    <div id="lg-bind" class="hidden" style="margin-top:14px;border-top:1px solid var(--line);padding-top:12px">
+      <label>LINE 綁定碼（經理：向老闆索取 6 位數綁定碼）</label>
+      <input id="lg-code" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位數">
+      <div style="margin-top:10px"><button class="btn" id="btnBind">綁定並登入</button></div>
+    </div>
   </section>
 
   <!-- 新增 -->
   <section id="v-new" class="hidden">
     <div class="card">
+      <h2 id="f-title" style="margin:4px 0 6px">新增報備</h2>
       <label>門市<span class="req">*</span></label><select id="f-branch"></select>
+      <div class="seg" id="kindSeg" style="display:none"><button data-k="REPORT" class="on">報備</button><button data-k="APPLY">申請</button></div>
       <label>類型<span class="req">*</span></label>
-      <div class="seg" id="kindSeg"><button data-k="REPORT" class="on">報備（不需核准）</button><button data-k="APPLY">申請（需核准）</button></div>
-      <select id="f-type" style="margin-top:8px"></select>
+      <select id="f-type"></select>
       <div id="f-fields"></div>
       <div id="f-attach" style="display:none">
         <label id="f-attach-label">請假證明<span class="req">*</span></label>
@@ -222,6 +241,32 @@
 
   <!-- 待核准 -->
   <section id="v-pending" class="hidden"><div id="pendingList"></div></section>
+
+  <!-- 經理：教練送來待核准的單（2026-11-25） -->
+  <section id="v-mgr" class="hidden">
+    <p class="muted" style="margin:10px 0">教練送來、等您核准的單。核准後：報備由機器人到 17FIT 處理；申請送老闆核准。</p>
+    <div id="mgrList"></div>
+  </section>
+
+  <!-- 教練帳號管理（2026-11-25：和電子簽約系統共用帳密；經理管自己分店，老闆與 Angela 管全部） -->
+  <section id="v-coach" class="hidden">
+    <div class="card">
+      <div class="row" style="align-items:flex-end">
+        <div style="flex:1 1 200px"><label>搜尋姓名或手機</label><input id="co-q" placeholder="姓名或手機"></div>
+        <div style="flex:0 0 96px"><button class="btn" id="btnCoQuery" style="width:100%">查詢</button></div>
+      </div>
+      <div class="muted" id="co-scope" style="margin-top:8px"></div>
+    </div>
+    <div id="coList"></div>
+    <details class="card" id="co-addbox">
+      <summary style="font-weight:700;cursor:pointer;color:var(--brand)">＋ 新增教練帳號</summary>
+      <label>教練姓名（和人資登記的中文名或英文名相同）</label><input id="co-name" placeholder="例：王小明">
+      <label>手機帳號（09 開頭 10 碼）</label><input id="co-acc" inputmode="numeric" maxlength="10" placeholder="09xxxxxxxx">
+      <label>密碼（至少 6 個字元）</label><input id="co-pwd" type="password" autocomplete="new-password">
+      <div style="margin-top:12px"><button class="btn" id="btnCoAdd">建立教練帳號</button></div>
+      <p class="muted" style="margin-top:8px">建立後教練就能登入電子簽約系統和課務營運稽核系統（同一組帳密）。離職後帳號會依人資資料自動停用。</p>
+    </details>
+  </section>
 
   <!-- 報備/申請記錄（2026-11-23 業主：打開分頁不自動載入，按查詢才列出） -->
   <section id="v-all" class="hidden">
@@ -683,6 +728,15 @@ $('btnLogin').onclick = function(){
   }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
 };
 $('lg-pwd').addEventListener('keydown', function(e){ if (e.key === 'Enter') $('btnLogin').click(); });
+$('btnBind').onclick = function(){
+  var b = this; if (!S.bindTicket) { flash('請從 LINE 重新開啟系統'); return; }
+  busy(b, true);
+  call('lineBindWithCode', S.bindTicket, $('lg-code').value).then(function(r){
+    S.token = r.token; try { sessionStorage.setItem('ezr_token', r.token); } catch (e) {}
+    S.bindTicket = null; $('lg-code').value = ''; $('lg-bind').classList.add('hidden'); $('lg-line').classList.add('hidden');
+    return start().then(function(){ flash('已綁定你的 LINE，之後從 LINE 開啟會自動登入', true); });
+  }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
+};
 $('btnLogout').onclick = function(){ doLogout(false); };
 function doLogout(expired){
   if (!expired && (S.token || keepGet())) runGs('logout', [S.token, keepGet()]).catch(function(){});
@@ -697,10 +751,11 @@ function doLogout(expired){
 function start(){
   return call('getBootstrap', S.token).then(function(b){
     S.boot = b;
-    $('who').textContent = b.me.displayName;
+    var rl = { COACH: '教練', MANAGER: '經理', ADMIN: '' }[b.me.role] || '';
+    $('who').textContent = rl + ' ' + b.me.displayName + ' 已登入' + (b.me.branch ? '｜' + b.me.branch + (b.me.role === 'MANAGER' ? '店' : '') : '');
     $('btnLogout').classList.remove('hidden');
     buildNav(); buildNewForm(); buildFilters();
-    show('new');
+    show(b.me.role === 'MANAGER' ? 'mgr' : 'new');
     if (S.go) { var g = S.go; S.go = null; goTo(g); }
   });
 }
@@ -711,27 +766,42 @@ function goTo(g){
     if (me.role === 'ADMIN') { $('q-status').value = ''; $('q-match').value = ''; $('q-branch').value = ''; $('q-from').value = ''; $('q-to').value = ''; $('q-q').value = g; show('all'); loadAll(); }
     else show('mine');
   } else if (g === 'pending' && me.role === 'ADMIN') show('pending');
+  else if ((g === 'pending' || g === 'mgr') && me.role === 'MANAGER') show('mgr');
   else if (g === 'ca' && me.ca && me.ca.view) show('ca');
   else if (g === 'sched' && me.role === 'ADMIN') show('sched');
 }
 
 /* ===== 導覽 ===== */
-var TABS = [['new','新增報備'],['mine','我的記錄']];
-var ADMIN_TABS = [['pending','待核准'],['all','報備/申請記錄'],['sys','系統維護']];
-function buildNav(){
-  var tabs = TABS.concat(S.boot.me.role === 'ADMIN' ? ADMIN_TABS : [['sys','系統維護']]);
-  if (S.boot.me.ca && S.boot.me.ca.view) tabs.splice(2, 0, ['ca','稽核結果']);
-  var sc = S.boot.me.sched;
+/**
+ * 分頁依角色（2026-11-25 業主）：
+ *   教練：報備、申請、我的記錄（送出的單一律待經理核准）
+ *   經理（只能用手機 LINE）：待核准、報備、申請、我的記錄、教練帳號
+ *   管理員：報備、申請、我的記錄、待核准、報備/申請記錄、稽核結果、課表發佈、教練帳號、系統維護
+ */
+function navTabs(){
+  var me = S.boot.me;
+  if (me.role === 'COACH') return [['new','報備'],['newapp','申請'],['mine','我的記錄']];
+  if (me.role === 'MANAGER') return [['mgr','待核准'],['new','報備'],['newapp','申請'],['mine','我的記錄'],['coach','教練帳號']];
+  var tabs = [['new','報備'],['newapp','申請'],['mine','我的記錄'],['pending','待核准'],['all','報備/申請記錄']];
+  if (me.ca && me.ca.view) tabs.push(['ca','稽核結果']);
   // 課表發佈只給管理員（2026-11-24 業主：經理看到的是不會顯示內容的空分頁）
-  if (sc && S.boot.me.role === 'ADMIN') tabs.splice(tabs.length - 1, 0, ['sched','課表發佈']);
+  if (me.sched) tabs.push(['sched','課表發佈']);
+  return tabs.concat([['coach','教練帳號'],['sys','系統維護']]);
+}
+function buildNav(){
+  var tabs = navTabs();
   $('nav').innerHTML = tabs.map(function(t){ return '<button data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('');
   $('nav').classList.remove('hidden');
   Array.prototype.forEach.call($('nav').children, function(b){ b.onclick = function(){ show(b.dataset.v); }; });
 }
 function show(v){
   flashClear();
-  ['login','new','mine','pending','all','sys','ca','sched'].forEach(function(x){ $('v-' + x).classList.toggle('hidden', x !== v); });
+  var sec = v === 'newapp' ? 'new' : v;
+  ['login','new','mine','pending','all','sys','ca','sched','mgr','coach'].forEach(function(x){ $('v-' + x).classList.toggle('hidden', x !== sec); });
   Array.prototype.forEach.call($('nav').children, function(b){ b.classList.toggle('on', b.dataset.v === v); });
+  if (sec === 'new') setKind(v === 'newapp' ? 'APPLY' : 'REPORT');
+  if (v === 'mgr') loadMgr();
+  if (v === 'coach') loadCoach();
   if (v === 'mine') loadMine();
   if (v === 'pending') loadPending();
   if (v === 'all' && !S.allQueried) $('allList').innerHTML = '<p class="muted">請設定條件後按「查詢」。</p>';
@@ -758,6 +828,14 @@ function buildNewForm(){
     dl.innerHTML = b.contracts.map(function(c){ return '<option value="' + esc(c) + '">'; }).join('');
     document.body.appendChild(dl);
   }
+}
+/** 報備／申請分頁切換類型清單（同一個表單） */
+function setKind(k){
+  if (S.kind === k && $('f-type').options.length) return;
+  S.kind = k;
+  Array.prototype.forEach.call($('kindSeg').children, function(x){ x.classList.toggle('on', x.dataset.k === k); });
+  $('f-title').textContent = k === 'APPLY' ? '新增申請' : '新增報備';
+  fillTypes();
 }
 function fillTypes(){
   var types = S.boot.types;
@@ -1832,7 +1910,8 @@ $('btnSubmit').onclick = function(){
   if (!confirm('確定送出「' + def.label + '」？')) return;
   busy(b, true);
   call('submitRequest', S.token, type, values, $('f-branch').value, S.files).then(function(r){
-    if (r.robot) {
+    if (r.status === 'MGR_PENDING') flash('已送出，編號 ' + r.id + '。已用 LINE 通知經理，經理核准後才會處理。', true);
+    else if (r.robot) {
       var rs = (ROBOT_STATUS[r.robot.status] || [r.robot.status])[0];
       flash('已送出，編號 ' + r.id + '。' + rs + (r.robot.status === 'BLOCKED' ? '，請照原本的方式自己到 17Fit 操作' : '，請到「我的記錄」看機器人做了什麼並確認'), r.robot.status !== 'FAILED');
     } else
@@ -1845,10 +1924,10 @@ $('btnSubmit').onclick = function(){
 
 /* ===== 清單 ===== */
 function statusBadge(r){
-  var cls = { REPORTED:'b-info', PENDING:'b-warn', APPROVED:'b-ok', REJECTED:'b-bad', CANCELLED:'' }[r.status] || '';
+  var cls = { REPORTED:'b-info', PENDING:'b-warn', APPROVED:'b-ok', REJECTED:'b-bad', CANCELLED:'', MGR_PENDING:'b-warn', MGR_REJECTED:'b-bad' }[r.status] || '';
   var m = r.matchStatus, mcls = { MATCHED:'b-ok', MATCHED_NO_ID:'b-warn', MISMATCH:'b-bad', NOT_EXECUTED:'b-bad', WAITING:'b-info' }[m] || '';
   return '<span class="badge ' + cls + '">' + esc(S.boot.statusLabel[r.status] || r.status) + '</span>' +
-    (m && m !== 'SKIPPED' ? '<span class="badge ' + mcls + '">' + esc(S.boot.matchLabel[m] || m) + '</span>' : '');
+    (m && m !== 'SKIPPED' && r.status !== 'MGR_PENDING' ? '<span class="badge ' + mcls + '">' + esc(S.boot.matchLabel[m] || m) + '</span>' : '');
 }
 function reqCard(r, extra){
   return '<div class="card"><div><b>' + esc(r.id) + '</b> ' + statusBadge(r) + '</div>' +
@@ -1856,6 +1935,7 @@ function reqCard(r, extra){
     '<div class="kv">會員：' + esc(r.member) + (r.relatedMember ? ' / ' + esc(r.relatedMember) : '') + '</div>' +
     '<div class="kv">方案：' + esc(r.contract) + '</div>' +
     '<div class="kv">' + esc(r.summary) + '</div>' +
+    (r.mgrApprover ? '<div class="kv muted">經理' + (r.status === 'MGR_REJECTED' ? '退回' : '核准') + '：' + esc(r.mgrApprover) + ' ' + esc(r.mgrDecidedAt) + '</div>' : '') +
     (r.approver ? '<div class="kv muted">簽核：' + esc(r.approver) + ' ' + esc(r.decidedAt) + '</div>' : '') +
     (r.executedAt ? '<div class="kv muted">17Fit 執行：' + esc(r.executedAt) + '</div>' : '') +
     (r.matchNote ? '<div class="kv muted">比對：' + esc(r.matchNote) + '</div>' : '') +
@@ -1925,8 +2005,42 @@ function loadMine(){
     });
   }).catch(function(e){ flash(e.message); });
 }
+/** 經理核准（網頁）；管理員在待核准頁也可以代為處理 */
+function mgrButtons(r){
+  return '<div class="row" style="margin-top:10px"><button class="btn" data-mdec="APPROVED" data-id="' + esc(r.id) + '">' + (r.kind === 'APPLY' ? '核准，送老闆' : '核准') + '</button>' +
+    '<button class="btn bad" data-mdec="REJECTED" data-id="' + esc(r.id) + '">退回</button></div>';
+}
+function bindMgrButtons(after){
+  Array.prototype.forEach.call(document.querySelectorAll('[data-mdec]'), function(b){
+    b.onclick = function(){
+      if (!confirm((b.dataset.mdec === 'APPROVED' ? '核准 ' : '退回 ') + b.dataset.id + '？')) return;
+      busy(b, true);
+      call('mgrDecide', S.token, b.dataset.id, b.dataset.mdec).then(function(r){
+        flash(b.dataset.id + (r.status === 'MGR_REJECTED' ? ' 已退回' : r.status === 'PENDING' ? ' 已核准，送老闆核准' : ' 已核准' + (r.robot ? '。' + (ROBOT_STATUS[r.robot.status] || [r.robot.status])[0] : '')), true); after();
+      }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
+    };
+  });
+}
+function loadMgr(){
+  $('mgrList').innerHTML = '<p class="muted">載入中…</p>';
+  call('mgrListPending', S.token).then(function(list){
+    $('mgrList').innerHTML = list.length ? list.map(function(r){ return reqCard(r, mgrButtons(r)); }).join('') : '<p class="muted">目前沒有待核准的單</p>';
+    var tab = $('nav').querySelector('[data-v="mgr"]');
+    if (tab) tab.innerHTML = '待核准' + (list.length ? ' <span class="cnt">' + list.length + '</span>' : '');
+    bindMgrButtons(loadMgr);
+  }).catch(function(e){ flash(e.message); });
+}
 function loadPending(){
   $('pendingList').innerHTML = '<p class="muted">載入中…</p>';
+  call('mgrListPending', S.token).then(function(ml){
+    if (!ml.length) return;
+    var box = document.createElement('div');
+    box.innerHTML = '<h2 style="margin:12px 0 4px">教練送來、待經理核准</h2>' + ml.map(function(r){ return reqCard(r, mgrButtons(r)); }).join('') + '<h2 style="margin:16px 0 4px">待老闆核准的申請</h2>';
+    $('pendingList').parentNode.insertBefore(box, $('pendingList'));
+    box.id = 'mgrInPending';
+    bindMgrButtons(function(){ var x = $('mgrInPending'); if (x) x.remove(); loadPending(); });
+  }).catch(function(){});
+  var old = $('mgrInPending'); if (old) old.remove();
   call('adminListRequests', S.token, { status: 'PENDING' }).then(function(list){
     $('pendingList').innerHTML = list.length ? list.map(function(r){
       return reqCard(r, '<div class="row" style="margin-top:8px"><button class="btn ok" data-dec="APPROVED" data-id="' + esc(r.id) + '">核准</button>' +
@@ -1941,6 +2055,46 @@ function loadPending(){
     });
   }).catch(function(e){ flash(e.message); });
 }
+function loadCoach(){
+  $('coList').innerHTML = '<p class="muted">讀取中…</p>';
+  call('coachAccList', S.token, $('co-q').value.trim()).then(function(r){
+    $('co-scope').textContent = '可管理：' + r.scope + '（教練分店以人資資料庫為準）｜共 ' + r.list.length + ' 位';
+    $('coList').innerHTML = r.list.map(function(c){
+      var off = c.disabled || c.hr === 'LEFT';
+      return '<div class="card"' + (off ? ' style="opacity:.75;border-style:dashed"' : '') + '><div style="display:flex;justify-content:space-between;gap:8px;align-items:center"><b style="font-size:16px">' + esc(c.coachName) + '</b>' +
+        '<span class="badge ' + (c.disabled ? '' : c.hr === 'ACTIVE' ? 'b-ok' : c.hr === 'LEFT' ? '' : 'b-warn') + '">' + (c.disabled ? '已停用' : esc(c.hrText)) + '</span></div>' +
+        '<div class="muted" style="margin-top:4px">' + esc(c.account) + (c.branch ? '｜' + esc(c.branch) : '') + (c.createdAt ? '｜建立 ' + esc(c.createdAt) : '') + '</div>' +
+        (c.hr === 'LEFT' ? '' : '<div class="row" style="margin-top:10px"><button class="btn sec" data-cpw="' + esc(c.account) + '">重設密碼</button>' +
+          '<button class="btn ' + (c.disabled ? 'sec' : 'bad') + '" data-cdis="' + esc(c.account) + '" data-on="' + (c.disabled ? '' : '1') + '">' + (c.disabled ? '重新啟用' : '停用') + '</button></div>') + '</div>';
+    }).join('') || '<p class="muted">沒有符合的教練</p>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-cpw]'), function(b){
+      b.onclick = function(){
+        var pw = prompt('輸入 ' + b.dataset.cpw + ' 的新密碼（至少 6 個字元）'); if (!pw) return;
+        busy(b, true);
+        call('coachAccResetPw', S.token, b.dataset.cpw, pw).then(function(){ flash('已重設密碼，請把新密碼交給教練', true); })
+          .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
+      };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-cdis]'), function(b){
+      b.onclick = function(){
+        var on = b.dataset.on === '1';
+        if (!confirm((on ? '停用 ' : '重新啟用 ') + b.dataset.cdis + '？' + (on ? '停用後電子簽約和稽核系統都不能登入。' : ''))) return;
+        busy(b, true);
+        call('coachAccSetDisabled', S.token, b.dataset.cdis, on).then(function(){ flash(on ? '已停用' : '已重新啟用', true); loadCoach(); })
+          .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
+      };
+    });
+  }).catch(function(e){ $('coList').innerHTML = ''; flash(e.message); });
+}
+$('btnCoQuery').onclick = loadCoach;
+$('co-q').addEventListener('keydown', function(e){ if (e.key === 'Enter') loadCoach(); });
+$('btnCoAdd').onclick = function(){
+  var b = this; busy(b, true);
+  call('coachAccAdd', S.token, { coachName: $('co-name').value.trim(), account: $('co-acc').value.trim(), password: $('co-pwd').value }).then(function(r){
+    flash('已建立教練帳號' + (r.warning ? '。' + r.warning : ''), !r.warning);
+    $('co-name').value = ''; $('co-acc').value = ''; $('co-pwd').value = ''; $('co-addbox').open = false; loadCoach();
+  }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
+};
 function buildFilters(){
   var b = S.boot;
   $('q-status').innerHTML = '<option value="">全部</option>' + Object.keys(b.statusLabel).map(function(k){ return '<option value="' + k + '">' + esc(b.statusLabel[k]) + '</option>'; }).join('');
@@ -1995,8 +2149,16 @@ function loadAcc(){
       return '<div class="card"><b>' + esc(a.displayName) + '</b>（' + esc(a.account) + '）<span class="badge">' + (a.role === 'ADMIN' ? '管理員' : '經理') + '</span>' +
         '<span class="badge ' + (a.status === 'ACTIVE' ? 'b-ok' : 'b-bad') + '">' + (a.status === 'ACTIVE' ? '啟用' : '停用') + '</span> ' + esc(a.branch) + (a.caPerms ? ' <span class="badge b-info">稽核' + (a.caPerms === 'HANDLE' ? '處理' : '檢視') + ' ' + esc(a.branches || (a.role === 'ADMIN' ? '全部' : '')) + '</span>' : '') +
         (a.lineCount ? ' <span class="badge b-ok">LINE 已綁定 ' + a.lineCount + ' 人</span>' : ' <span class="badge">LINE 未綁定</span>') +
-        ' <button class="btn sec" style="padding:4px 10px" data-edit=\'' + esc(JSON.stringify(a)) + '\'>編輯</button></div>';
+        ' <button class="btn sec" style="padding:4px 10px" data-edit=\'' + esc(JSON.stringify(a)) + '\'>編輯</button>' +
+        (a.status === 'ACTIVE' ? ' <button class="btn sec" style="padding:4px 10px" data-bindcode="' + esc(a.account) + '">產生 LINE 綁定碼</button>' : '') + '</div>';
     }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('[data-bindcode]'), function(b){
+      b.onclick = function(){
+        call('adminLineBindCode', S.token, b.dataset.bindcode).then(function(r){
+          alert(r.displayName + ' 的 LINE 綁定碼：' + r.code + '\n' + r.minutes + ' 分鐘內有效、只能用一次。\n請他從自己手機的 LINE 開啟系統，輸入這個綁定碼。');
+        }).catch(function(e){ flash(e.message); });
+      };
+    });
     Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function(b){
       b.onclick = function(){ var a = JSON.parse(b.dataset.edit);
         $('a-acc').value = a.account; $('a-name').value = a.displayName; $('a-role').value = a.role; $('a-branch').value = a.branch; $('a-status').value = a.status; $('a-cabr').value = a.branches || ''; $('a-caperm').value = a.caPerms || ''; $('a-pwd').value = ''; $('a-clearline').checked = false; window.scrollTo(0, 0); };
@@ -2940,7 +3102,8 @@ function boot(){
     call('lineLogin', q.lt).then(function(r){
       if (r.needBind) {
         S.bindTicket = r.ticket;
-        note.textContent = (r.lineName ? r.lineName + '，' : '') + '第一次從 LINE 開啟，請用系統帳號密碼登入一次。登入後會綁定你的 LINE，之後從 LINE 點進來就不必再輸入密碼。';
+        note.textContent = (r.lineName ? r.lineName + '，' : '') + '第一次從 LINE 開啟：經理請在下方輸入老闆給的綁定碼；管理員可直接用帳號密碼登入一次。綁定後從 LINE 點進來就會自動登入。';
+        $('lg-bind').classList.remove('hidden');
         return;
       }
       note.classList.add('hidden');
