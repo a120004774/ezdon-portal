@@ -712,7 +712,7 @@ function goTo(g){
     else show('mine');
   } else if (g === 'pending' && me.role === 'ADMIN') show('pending');
   else if (g === 'ca' && me.ca && me.ca.view) show('ca');
-  else if (g === 'sched' && me.sched && (me.sched.configured || me.role === 'ADMIN')) show('sched');
+  else if (g === 'sched' && me.role === 'ADMIN') show('sched');
 }
 
 /* ===== 導覽 ===== */
@@ -722,7 +722,8 @@ function buildNav(){
   var tabs = TABS.concat(S.boot.me.role === 'ADMIN' ? ADMIN_TABS : [['sys','系統維護']]);
   if (S.boot.me.ca && S.boot.me.ca.view) tabs.splice(2, 0, ['ca','稽核結果']);
   var sc = S.boot.me.sched;
-  if (sc && (sc.configured || S.boot.me.role === 'ADMIN')) tabs.splice(tabs.length - 1, 0, ['sched','課表發佈']);
+  // 課表發佈只給管理員（2026-11-24 業主：經理看到的是不會顯示內容的空分頁）
+  if (sc && S.boot.me.role === 'ADMIN') tabs.splice(tabs.length - 1, 0, ['sched','課表發佈']);
   $('nav').innerHTML = tabs.map(function(t){ return '<button data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('');
   $('nav').classList.remove('hidden');
   Array.prototype.forEach.call($('nav').children, function(b){ b.onclick = function(){ show(b.dataset.v); }; });
