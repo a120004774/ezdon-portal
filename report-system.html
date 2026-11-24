@@ -1051,7 +1051,7 @@ function setupLeaveEnd(){
     if (rd <= l.leaveStart || rd > l.leaveEnd) { info.innerHTML = '<span style="color:#b91c1c">⛔ 銷假日要在 ' + ymd(l.leaveStart, 1) + '～' + l.leaveEnd + ' 之間</span>'; return; }
     var pe = ymd(rd, -1), days = Math.round((Date.parse(l.leaveEnd) - Date.parse(pe)) / 86400000);
     $('fld-pauseEnd').value = pe; $('fld-newEnd').value = ymd(l.oldEnd, -days);
-    info.innerHTML = '提早 ' + days + ' 天恢復。17Fit：暫停期間改成 <b>' + l.leaveStart + '～' + pe + '</b>，到期日 ' + l.oldEnd + ' → <b>' + ymd(l.oldEnd, -days) + '</b>（原因欄寫編號）。';
+    info.innerHTML = '提早 ' + days + ' 天恢復：暫停期間改成 <b>' + l.leaveStart + '～' + pe + '</b>，到期日 ' + l.oldEnd + ' → <b>' + ymd(l.oldEnd, -days) + '</b>。';
   };
   calc();
   call('openLeaves', S.token).then(function(r){
@@ -1088,8 +1088,7 @@ function setupTransferPick(){
     $('fld-contractId').value = checked.map(function(p){ return p.id; }).join(',');
     if ($('fld-contractEnds')) $('fld-contractEnds').value = checked.map(function(p){ return p.end || ''; }).join(',');
     $('fld-remainPlans').value = !plans || !checked.length ? '' : rest.length ? '還有其他方案' : '沒有剩餘方案';
-    var html = '<b>提醒：</b>受讓人如果是<b>新學員</b>，要先在 17Fit 新增客戶（姓名＋卡號），櫃台<b>收帳戶設定費</b>，再回來在受讓人欄點選他。<br>' +
-      '17Fit：受讓人結帳 0 元購買同款方案並調成轉讓堂數；轉讓人轉出的方案<b>「場館扣除」剩餘堂數到 0</b>（原因欄寫編號；不要按「取消資格」，會把尚未上的預約一起取消）。';
+    var html = '<b>提醒：</b>受讓人如果是<b>新學員</b>，要先在 17Fit 新增客戶（姓名＋卡號），櫃台<b>收帳戶設定費</b>，再回來在受讓人欄點選他。';
     if (checked.length) html += '<br>轉出 ' + checked.length + ' 個方案：' + checked.map(function(p){ return esc(p.name) + ' ' + esc(p.remaining) + ' 堂'; }).join('、') + '。' +
       (rest.length ? '<br>轉讓人還有其他有效方案（' + rest.map(function(p){ return esc(p.name); }).join('、') + '）：帳號名稱不用改，日後再買方案也不用重繳帳戶設定費。'
         : '<br><b>轉讓後轉讓人沒有剩餘方案</b>：帳號名稱後面要加註<b>「(已轉讓)」</b>（下方取消勾選就不加註），日後再買方案要重繳帳戶設定費。');
@@ -1240,17 +1239,64 @@ function setupMemberPlans(def){
     loaded = null; seq++; plans = null; info.innerHTML = ''; warn.textContent = ''; dl.innerHTML = ''; setList('dl-contracts');
   });
 }
+/**
+ * 每一類「自己到 17Fit 操作」的做法（2026-11-24 業主：對照機器人實際步驟）。機器人沒做時經理照這個做。
+ * src：一般贈課的贈課來源。回傳 HTML（空字串＝沒有做法）。
+ */
+function manualSteps(t, src){
+  var noCancel = '（不要按「取消資格」，會把已約的課一起取消）';
+  switch (t) {
+    case 'GIFT':
+      if (src === '888直購' || src === '888銜接') return '幫會員<b>購買 0 元的「888直購/銜接贈課 N堂團體課」</b>（有贈教練課的再買「888直購/銜接贈課 N堂私人教練課」），堂數照上面帶出的贈送堂數，訂單備註寫編號，<b>不要用場館給予</b>。';
+      if (src === 'BR轉介') return '幫介紹人<b>購買 0 元的「BR贈課…」方案</b>（訂單備註寫編號），不要用場館給予。';
+      if (src === '生日好禮' || src === 'Google好評') return '幫會員<b>購買 0 元的「' + (src === '生日好禮' ? '生日好禮_團課贈送1堂' : 'Google五星好評_團課贈送1堂') + '」</b>（訂單備註寫編號），不要用場館給予。';
+      return '先選贈課來源。';
+    case 'SPECIAL_GIFT': return '在選的方案<b>「場館給予」</b>贈送堂數，原因欄寫「編號 特殊贈課 原因」。';
+    case 'TRIAL_DISCOUNT': return '① 單堂付費的訂單按<b>「退費」</b>（現金，不勾自動開折讓，原因寫編號）；② 成交的正式方案<b>「場館扣除」1 堂</b>，原因寫編號。';
+    case 'EXTEND': case 'EXTEND_ADDON': return '在方案的<b>「有效期間」</b>把到期日改成新到期日，原因欄寫編號。';
+    case 'LEAVE': return '方案「狀態」改成<b>「暫停」</b>，期間＝請假開始日～結束日；再到<b>「有效期間」</b>把到期日改成新到期日（暫停不會自動延長到期日），兩處原因欄都寫編號。';
+    case 'LEAVE_END': return '方案的暫停期間改成<b>「請假開始日～銷假日前一天」</b>，再到<b>「有效期間」</b>把到期日改成新到期日，兩處原因欄都寫編號。';
+    case 'CANCEL_BOOKING': return 'A、C 類：這筆預約按<b>「無條件取消」</b>。B、D 類：先確認正確課程還有名額，再無條件取消原預約，然後用上面選的方案（D 類用 $888 方案）幫學員<b>預約正確課程</b>，預約備註寫編號。';
+    case 'TRANSFER': return '① 受讓人<b>結帳 0 元購買同款方案</b>（訂單備註寫「編號 受讓自 轉讓人」）；② 受讓人新方案堂數調成轉讓堂數；③ 受讓人新方案<b>到期日改成轉讓人原方案的到期日</b>；④ 轉讓人轉出的方案<b>「場館扣除」</b>轉出的堂數' + noCancel + '；⑤ 轉讓人沒有剩餘方案時，帳號名稱加註<b>「(已轉讓)」</b>（取消勾選就不加註）。原因欄都寫編號。';
+    case 'REFUND': return '到「結帳 → 已結帳」開啟當初購買的<b>訂單</b>按「退費」（現金，原因寫編號，不勾自動開折讓）；<b>刷卡買的方案</b>先退名稱完全相符的「刷卡」方案訂單，不足的再退同一天建立的「客製化團課專班」訂單，一筆一筆退到足額；退費<b>不會</b>自動處理方案，要再到方案<b>「場館扣除」</b>上面帶入的堂數' + noCancel + '；帳號名稱加註<b>「(已退費)」</b>（取消勾選就不加註）。';
+    case 'OFFSET': return '① 新方案結帳時<b>折扣＝上面的折扣金額</b>，折扣原因寫「編號 折抵」，實收＝實際付款金額，<b>只能現金付款</b>，訂單備註寫「編號 購買時使用舊方案折抵，實際付款金額：xxxx」；② 原方案<b>「場館扣除」</b>上面帶入的堂數' + noCancel + '，原因寫編號；③ 活動3 選「是」時，新方案到期日再加 30 天。';
+    case 'MERGE': return '新方案<b>「場館給予」</b>合併堂數，舊方案<b>「場館扣除」</b>同樣堂數（剩 0 堂），兩筆原因欄都寫編號。';
+    case 'UPGRADE': return '① 結帳買新方案的<b>現金</b>品項，<b>折扣＝原方案牌價</b>，實收＝價差，折扣原因和訂單備註寫「編號 活動升級」；② 新方案有效期間改成上面的<b>起始日～到期日</b>；③ 新方案「場館扣除」上面帶入的堂數；④ 原方案「場館扣除」付費剩餘堂數' + noCancel + '。';
+  }
+  return '';
+}
+/** 機器人會不會做這一類（只限測試會員模式：一般會員還是經理自己做，所以算不會） */
+function robotDoes(t){ var r = S.boot.robot || {}; return r.mode === 'on' && (r.types || []).indexOf(t) >= 0; }
+/** 表單最下方的註解（2026-11-24 業主：機器人啟用後以機器人為主，自己操作的做法收起來） */
+function renderHint(){
+  var t = $('f-type').value, def = S.boot.types[t], src = $('fld-source') ? $('fld-source').value : '', h = '';
+  if (!def) return;
+  if (t === 'BR_REFERRAL') h = '轉介通知不需要在 17Fit 操作。新客成交後送「一般贈課」（來源選 BR轉介）時，<b>要引用這筆轉介通知的編號</b>；BR 只贈介紹人，同一筆轉介只能贈送一次。';
+  else if (t === 'GROUP_CHANGE') h = '送出後會產生編號並通知主管核准；核准後照原本的方式到 17Fit 修改課表。';
+  else {
+    var apply = def.kind === 'APPLY', steps = manualSteps(t, src);
+    var where = def.idHint ? '<br>編號要寫在<b>' + esc(def.idHint) + '</b>的開頭。' : '';
+    if (robotDoes(t)) {
+      h = (apply ? '送出後會產生編號（例如 R2611-015）並通知主管核准。核准後機器人會到 17Fit 完成操作（在 LINE 核准的話，大約 1 分鐘內），' :
+        '送出後會產生編號（例如 R2611-015），機器人會馬上到 17Fit 完成操作，') +
+        '編號會自動寫上。完成後請到「我的記錄」核對機器人做的每一步，再按確認。<br>「我的記錄」顯示「機器人沒有做」或「做到一半停下」時，再照下面的做法自己到 17Fit 操作。' +
+        (steps ? '<details style="margin-top:6px"><summary style="cursor:pointer">自己操作時的 17Fit 做法</summary><div style="margin-top:6px">' + steps + where + '</div></details>' : '');
+    } else {
+      h = '送出後會產生編號（例如 R2611-015）' + (apply ? '並通知主管核准；核准後' : '，') + '請自己到 17Fit 操作：<br>' + steps + where;
+    }
+  }
+  // 一般贈課：各來源的規則說明
+  if (t === 'GIFT') h += src === '888直購' || src === '888銜接' ? '<br>888直購＝888 體驗期間內購買；888銜接＝體驗到期後 14 天內購買。' :
+    src === 'BR轉介' ? '<br>BR 贈課只給介紹人，一筆轉介通知只能贈送一次（贈課或展延擇一）。私人教練課只在新客買私人教練課、介紹人也有私人教練課時才送。' : '';
+  $('f-hint').innerHTML = h;
+}
 function renderFields(){
   S.mpCache = {}; S.tdCache = {}; // 換表單就重新到 17Fit 讀（剛買的方案才看得到）
   var def = S.boot.types[$('f-type').value];
   // 2026-11-23 業主：只有展延(請假)要附件（請假證明，必附），其他類別不顯示附件欄
   $('f-attach').style.display = def && def.attachRequired ? '' : 'none';
   if (!(def && def.attachRequired)) { S.files = []; $('f-files').value = ''; $('f-thumbs').innerHTML = ''; }
-  $('f-hint').innerHTML = $('f-type').value === 'BR_REFERRAL' ?
-    '轉介通知不需要在 17Fit 操作。新客成交後送「一般贈課」（來源選 BR轉介）時，<b>要引用這筆轉介通知的編號</b>；BR 只贈介紹人，同一筆轉介只能贈送一次。' :
-    def.idHint ?
-    '送出後會產生編號（例如 R2611-015）。在 17Fit 操作時，請在<b>' + esc(def.idHint) + '</b>開頭寫上這個編號，系統才能自動比對。' :
-    '送出後會產生編號。這類操作在 17Fit 沒有備註欄，不用寫編號，系統會用會員、時間和內容自動比對。';
+  renderHint();
   $('f-fields').innerHTML = def.fields.map(function(f){
     var id = 'fld-' + f.key, req = f.required ? '<span class="req">*</span>' : '';
     var input;
@@ -1528,17 +1574,7 @@ function renderFields(){
       }).catch(function(){});
     };
     ['fld-member', 'fld-dealContract', 'fld-source'].forEach(function(id){ $(id).addEventListener('change', tdId); });
-    var giftHint = function(){
-      var src = $('fld-source').value, h = $('f-hint').dataset.base || $('f-hint').innerHTML;
-      $('f-hint').dataset.base = h;
-      var extra = src === '體驗折價' ? '<br>體驗折價在 17Fit 要做兩件事：結帳時正式方案<b>折扣＝單堂付費的實收金額</b>，並對正式方案<b>「場館扣除」1 堂</b>（原因欄寫編號）。' :
-        (src === '888直購' || src === '888銜接') ? '<br>17Fit 做法：幫會員<b>購買 0 元的「888直購/銜接贈課 N堂團體課」</b>（有贈教練課的再買「888直購/銜接贈課 N堂私人教練課」），堂數照上面帶出的贈送堂數，訂單備註寫編號，<b>不要用場館給予</b>。888直購＝888 體驗期間內購買；888銜接＝體驗到期後 14 天內購買。' :
-        src === 'BR轉介' ? '<br>BR 贈課只給介紹人，一筆轉介通知只能贈送一次（贈課或展延擇一）。17Fit 做法：幫介紹人<b>購買 0 元的「BR贈課…」方案</b>（訂單備註寫編號），不要用場館給予。私人教練課只在新客買私人教練課、介紹人也有私人教練課時才送。' :
-        (src === '生日好禮' || src === 'Google好評') ? '<br>17Fit 做法：幫會員<b>購買 0 元的「' + (src === '生日好禮' ? '生日好禮_團課贈送1堂' : 'Google五星好評_團課贈送1堂') + '」</b>（訂單備註寫編號），不要用場館給予。' : '';
-      $('f-hint').innerHTML = h + extra;
-    };
-    giftHint();
-    $('fld-source').addEventListener('change', giftHint);
+    $('fld-source').addEventListener('change', renderHint);
   }
   if (t === 'REFUND' || t === 'OFFSET') {
     // 2026-11-22 業主：選好會員與方案後，系統到 17Fit 查資料自動計算退費／可折抵金額並寫出算法；經理可改，但要寫原因
@@ -1613,13 +1649,13 @@ function renderFields(){
   }
   if (t === 'REFUND') {
     var rfInfo = document.createElement('div'); rfInfo.className = 'hint';
-    rfInfo.innerHTML = '17Fit：到「結帳 → 已結帳」開啟當初購買的<b>訂單</b>按「退費」（原因寫編號，不勾自動開折讓）；<b>刷卡買的方案</b>先退名稱完全相符的「刷卡」方案訂單，不足的再退同一天連續建立的「客製化團課專班」訂單（退款方式現金），一筆一筆退到足額；退費<b>不會</b>自動處理方案，要再到方案<b>「場館扣除」</b>上面帶入的堂數（贈送的堂數不扣；方案合併進來的堂數要一起扣；不要按「取消資格」，已約的課要保留）；帳號名稱後面要加註<b>「(已退費)」</b>（下方取消勾選就不加註），日後回來買課要再收帳戶設定費。';
+    rfInfo.innerHTML = '退費後帳號名稱會加註<b>「(已退費)」</b>（下方取消勾選就不加註）；學生日後回來買課，要再收帳戶設定費。';
     $('fld-reason').parentNode.insertBefore(rfInfo, $('fld-reason').nextSibling);
   }
   if (t === 'OFFSET' || t === 'MERGE') {
     var ocInfo = document.createElement('div'); ocInfo.className = 'hint';
-    ocInfo.innerHTML = t === 'OFFSET' ? '學生自願<b>放棄原方案</b>的權利，換取用折扣購買新方案。17Fit：① 新方案結帳時<b>折扣＝上面的折扣金額</b>，折扣原因寫「編號 折抵」，實收＝實際付款金額，<b>只能現金付款</b>，訂單備註寫「編號 購買時使用舊方案折抵，實際付款金額：xxxx」；② 原方案<b>「場館扣除」</b>上面帶入的堂數（贈送的堂數留著，方案合併進來的堂數要一起扣，不要取消資格），原因寫編號；③ 原方案訂單<b>不退費</b>，帳號名稱<b>不用</b>加註。新方案的電子合約要簽<b>實際付款金額</b>的特殊金額合約（每堂平均價＝實付 ÷ 堂數，進位）。活動3（基礎課程升乖寶寶）選「是」時，新方案到期日要<b>再延 30 天</b>。' :
-      '17Fit：新方案「場館給予」合併堂數，<b>舊方案「場館扣除」剩餘堂數到 0</b>（原因欄寫編號）。';
+    ocInfo.innerHTML = t === 'OFFSET' ? '學生自願<b>放棄原方案</b>的權利，換取用折扣購買新方案；原方案訂單<b>不退費</b>，帳號名稱<b>不用</b>加註。新方案<b>只能現金付款</b>，電子合約要簽<b>實際付款金額</b>的特殊金額合約（每堂平均價＝實付 ÷ 堂數，進位）。活動3（基礎課程升乖寶寶）選「是」時，新方案到期日會再延 30 天。' :
+      '被合併的舊方案剩餘堂數會全部移到新方案，舊方案剩 0 堂。';
     $('fld-contract').parentNode.insertBefore(ocInfo, $('fld-contract').nextSibling);
   }
   if (t === 'UPGRADE') {
@@ -1643,14 +1679,14 @@ function renderFields(){
     };
     ['fld-member', 'fld-contract', 'fld-campaign', 'fld-newContract'].forEach(function(id){ $(id).addEventListener('change', runUp); });
     var upInfo = document.createElement('div'); upInfo.className = 'hint';
-    upInfo.innerHTML = '原方案直接升等級：<b>起算日、堂數不變</b>，只補<b>固定價差（只能現金）</b>，不送課、不退費。17Fit：① 結帳買新方案的<b>現金</b>品項，<b>折扣＝原方案牌價</b>，實收＝價差，折扣原因和訂單備註寫「編號 活動升級」；② 新方案有效期間改成上面的<b>起始日～到期日</b>；③ 新方案「場館扣除」上面帶入的堂數；④ 原方案「場館扣除」付費剩餘堂數（贈送、方案合併進來的堂數留著，不要取消資格）。合約重簽新方案的一般合約，<b>購買日期寫原合約的購買日期</b>。';
+    upInfo.innerHTML = '原方案直接升等級：<b>起算日、堂數不變</b>，只補<b>固定價差（只能現金）</b>，不送課、不退費。合約重簽新方案的一般合約，<b>購買日期寫原合約的購買日期</b>。';
     $('fld-newContract').parentNode.insertBefore(upInfo, $('fld-newContract').nextSibling);
   }
   if (t === 'LEAVE') {
     // 新到期日＝原到期日＋請假天數（含頭含尾），由系統計算，不能手改
     $('fld-newEnd').readOnly = true;
     var leaveInfo = document.createElement('div'); leaveInfo.className = 'hint'; leaveInfo.id = 'leaveInfo';
-    leaveInfo.textContent = '17Fit：方案「狀態」改成「暫停」，期間＝請假開始日～結束日；再到「有效期間」把到期日改成新到期日（暫停不會自動延長到期日），兩處原因欄都寫編號。';
+    leaveInfo.textContent = '';
     $('fld-newEnd').parentNode.insertBefore(leaveInfo, $('fld-newEnd').nextSibling);
     var dayUtc = function(s){ var p = String(s).split('-'); return p.length === 3 ? Date.UTC(+p[0], +p[1] - 1, +p[2]) : NaN; };
     var calcLeave = function(){
@@ -1659,8 +1695,8 @@ function renderFields(){
       var days = Math.round((e - s) / 86400000) + 1;
       if (days < 1) { $('fld-newEnd').value = ''; leaveInfo.textContent = '請假結束日不可早於開始日'; return; }
       $('fld-newEnd').value = new Date(o + days * 86400000).toISOString().slice(0, 10);
-      leaveInfo.textContent = '請假 ' + days + ' 天：17Fit 方案在 ' + $('fld-leaveStart').value + '～' + $('fld-leaveEnd').value +
-        ' 暫停；有效期間的到期日 ' + $('fld-oldEnd').value + ' → ' + $('fld-newEnd').value + '（暫停不會自動延長，要另外改）。';
+      leaveInfo.textContent = '請假 ' + days + ' 天：方案在 ' + $('fld-leaveStart').value + '～' + $('fld-leaveEnd').value +
+        ' 暫停，到期日 ' + $('fld-oldEnd').value + ' → ' + $('fld-newEnd').value + '。';
     };
     ['leaveStart','leaveEnd','oldEnd'].forEach(function(k){ $('fld-' + k).addEventListener('input', calcLeave); $('fld-' + k).addEventListener('change', calcLeave); });
   }
