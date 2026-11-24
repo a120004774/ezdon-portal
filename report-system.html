@@ -110,12 +110,13 @@
   header h1{font-size:22px;margin:0;font-weight:700;display:flex;align-items:center;gap:12px}
   /* 標題圖案（2026-11-25 業主：活潑、表達系統功能）：清單打勾＋放大鏡檢查；打開頁面時打勾畫出來、放大鏡掃過一次 */
 .ttl-ico{flex:none;width:58px;height:50px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.25))}
-  .ttl-ico .chk{stroke-dasharray:12;stroke-dashoffset:12;animation:ttlDraw .4s ease-out forwards}
+  /* 循環播放（2026-11-25 業主）：每 5 秒打勾依序畫出、停一下、擦掉再來，放大鏡跟著掃 */
+  .ttl-ico .chk{stroke-dasharray:12;stroke-dashoffset:12;animation:ttlDraw 5s ease-out infinite}
   .ttl-ico .chk.c2{animation-delay:.3s} .ttl-ico .chk.c3{animation-delay:.6s} .ttl-ico .chk.c4{animation-delay:1.3s}
-  .ttl-ico .mag{animation:ttlScan 1.2s ease-in-out .1s both}
+  .ttl-ico .mag{animation:ttlScan 5s ease-in-out .1s infinite both}
   .ttl-ico .ring{animation:ttlRing 2.4s ease-in-out infinite alternate}
-  @keyframes ttlDraw{to{stroke-dashoffset:0}}
-  @keyframes ttlScan{0%{transform:translate(-14px,-14px)}50%{transform:translate(-6px,-3px)}100%{transform:none}}
+  @keyframes ttlDraw{0%{stroke-dashoffset:12}8%{stroke-dashoffset:0}80%{stroke-dashoffset:0}90%,100%{stroke-dashoffset:12}}
+  @keyframes ttlScan{0%{transform:translate(-14px,-14px)}12%{transform:translate(-6px,-3px)}24%{transform:none}78%{transform:none}100%{transform:translate(-14px,-14px)}}
   @keyframes ttlRing{from{opacity:.5}to{opacity:1}}
   /* 標題下的裝飾線（漸層線＋三條斜短槓，參考業主給的圖） */
   .ttl-line{display:block;position:relative;height:3px;margin:6px 34px 0 0;border-radius:2px;background:linear-gradient(90deg,rgba(125,211,252,0),#7DD3FC 70%,#BAE6FD)}
