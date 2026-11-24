@@ -1,0 +1,2918 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<style id="antiClickjack">body{display:none!important}</style>
+<script>if (window.top === window.self) { var s = document.getElementById("antiClickjack"); s.parentNode.removeChild(s); } else { try { window.top.location = window.self.location; } catch (_) {} }</script>
+<script>window.EZDON_API_URL = "https://script.google.com/macros/s/AKfycbzeJKpproQbowrEaRdP9yo09J90Z7kZSDoSuxsYHQvChIvbcDR2eQRtazNV6LVlcm3u/exec";</script>
+<script>
+/*
+ * google.script.run 替身（靜態前端用；與 EzdonPT/web/gas-shim.js 同源，另加 history）
+ *
+ * 頁面不再由 GAS 提供，原本的 google.script.run 就不存在了。這個檔案做一個用法完全相同的
+ * google.script.run：withSuccessHandler / withFailureHandler / 呼叫函式，
+ * 實際上用 fetch 把 {fn, args} POST 到 window.EZDON_API_URL（GAS 部署的 /exec 網址），
+ * 由後端 Api.js 的 doPost 轉給原本的函式。
+ *
+ * Content-Type 用 text/plain，瀏覽器才不會先送 CORS 預檢（GAS 不支援 OPTIONS）。
+ */
+(function () {
+  'use strict';
+  var API = window.EZDON_API_URL;
+
+  function toError(e) {
+    if (e instanceof Error) {
+      if (/Failed to fetch|NetworkError|Load failed/i.test(e.message)) {
+        return new Error('網路連線失敗，請確認網路後再試一次。');
+      }
+      return e;
+    }
+    return new Error(String(e));
+  }
+
+  function call(fn, args, ok, ko) {
+    fetch(API, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ fn: fn, args: args }),
+      redirect: 'follow',
+      credentials: 'omit'
+    })
+      .then(function (r) {
+        if (!r.ok) throw new Error('伺服器回應錯誤（' + r.status + '），請稍後再試。');
+        return r.text();
+      })
+      .then(function (text) {
+        var j;
+        try { j = JSON.parse(text); } catch (_) { throw new Error('伺服器回應格式錯誤，請稍後再試。'); }
+        if (j && j.error) { if (ko) ko(new Error(j.error)); return; }
+        if (ok) ok(j ? j.result : null);
+      })
+      .catch(function (e) { if (ko) ko(toError(e)); });
+  }
+
+  function runner(ok, ko) {
+    return new Proxy({}, {
+      get: function (_, fn) {
+        if (typeof fn !== 'string' || fn === 'then') return undefined;
+        if (fn === 'withSuccessHandler') return function (f) { return runner(f, ko); };
+        if (fn === 'withFailureHandler') return function (f) { return runner(ok, f); };
+        if (fn === 'withUserObject') return function () { return runner(ok, ko); };
+        return function () { call(fn, Array.prototype.slice.call(arguments), ok, ko); };
+      }
+    });
+  }
+
+  /** google.script.url.getLocation：學員簽署頁用它讀網址上的 ?t=簽署代碼 */
+  function getLocation(cb) {
+    var parameter = {}, parameters = {};
+    new URLSearchParams(window.location.search).forEach(function (v, k) {
+      if (!(k in parameter)) parameter[k] = v;
+      (parameters[k] = parameters[k] || []).push(v);
+    });
+    cb({ parameter: parameter, parameters: parameters, hash: window.location.hash.replace(/^#/, '') });
+  }
+
+  /** google.script.history：報表系統用 replace 把 LINE 登入憑證從網址拿掉 */
+  function historyFn(method) {
+    return function (state, params, hash) {
+      var q = params ? new URLSearchParams(params).toString() : '';
+      var url = window.location.pathname + (q ? '?' + q : '') + (hash ? '#' + hash : '');
+      try { window.history[method](state || null, '', url); } catch (_) {}
+    };
+  }
+
+  window.google = window.google || {};
+  window.google.script = {
+    run: runner(null, null),
+    url: { getLocation: getLocation },
+    history: { replace: historyFn('replaceState'), push: historyFn('pushState'), setChangeHandler: function () {} }
+  };
+})();
+</script>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>課務營運稽核系統</title>
+<style>
+  :root{--brand:#2f6feb;--ink:#1f2937;--muted:#6b7280;--bg:#f6f7fb;--card:#fff;--line:#e5e7eb;
+        --ok:#16a34a;--warn:#d97706;--bad:#dc2626;--soft:#f3f4f6}
+  *{box-sizing:border-box}
+  body{margin:0;font-family:system-ui,-apple-system,"Noto Sans TC","Microsoft JhengHei",sans-serif;background:var(--bg);color:var(--ink);font-size:15px}
+  header{background:var(--brand);color:#fff;padding:12px 16px;display:flex;justify-content:space-between;align-items:center;position:sticky;top:0;z-index:5}
+  header h1{font-size:16px;margin:0}
+  header button{background:rgba(255,255,255,.2);color:#fff;border:0;border-radius:8px;padding:6px 10px}
+  main{max-width:820px;margin:0 auto;padding:12px 16px 80px}
+  nav{display:flex;gap:6px;overflow-x:auto;padding:8px 16px;background:#fff;border-bottom:1px solid var(--line);position:sticky;top:46px;z-index:4}
+  nav button{flex:none;border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 12px;font-size:14px;color:var(--ink)}
+  nav button.on{background:var(--brand);border-color:var(--brand);color:#fff}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px;margin:10px 0}
+  label{display:block;font-size:13px;color:var(--muted);margin:10px 0 4px}
+  label .req{color:var(--bad)}
+  input,select,textarea{width:100%;padding:10px;border:1px solid #d1d5db;border-radius:8px;font-size:15px;background:#fff;color:var(--ink)}
+  textarea{min-height:70px}
+  .btn{display:inline-block;border:0;border-radius:8px;padding:10px 16px;font-size:15px;background:var(--brand);color:#fff;cursor:pointer}
+  .btn.sec{background:var(--soft);color:var(--ink)}
+  .btn.ok{background:var(--ok)} .btn.bad{background:var(--bad)}
+  .btn:disabled{opacity:.5}
+  /* 2026-11-23 業主：系統執行中要有動畫（按鈕轉圈、畫面上方跑馬條＋「系統處理中」） */
+  .btn.busy{position:relative;opacity:.75;padding-right:38px}
+  .btn.busy::after{content:"";position:absolute;right:12px;top:50%;width:14px;height:14px;margin-top:-7px;border:2px solid currentColor;border-right-color:transparent;border-radius:50%;animation:ezspin .8s linear infinite}
+  @keyframes ezspin{to{transform:rotate(360deg)}}
+  #busyBar{position:fixed;left:0;right:0;top:0;height:3px;z-index:9999;display:none;overflow:hidden;background:rgba(47,111,235,.15)}
+  #busyBar::before{content:"";position:absolute;top:0;bottom:0;width:40%;background:var(--brand);animation:ezbar 1.1s ease-in-out infinite}
+  @keyframes ezbar{0%{left:-40%}100%{left:100%}}
+  #busyPill{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);z-index:9999;display:none;align-items:center;gap:10px;background:rgba(31,41,55,.92);color:#fff;border-radius:12px;padding:14px 22px;font-size:16px;box-shadow:0 6px 20px rgba(0,0,0,.25);pointer-events:none}
+  #busyPill::before{content:"";width:18px;height:18px;border:2px solid #fff;border-right-color:transparent;border-radius:50%;animation:ezspin .8s linear infinite}
+  .row{display:flex;gap:8px;flex-wrap:wrap}
+  .row>*{flex:1 1 140px}
+  .badge{display:inline-block;font-size:12px;padding:2px 8px;border-radius:999px;background:var(--soft);margin-right:4px}
+  .b-ok{background:#dcfce7;color:#166534}.b-warn{background:#fef3c7;color:#92400e}.b-bad{background:#fee2e2;color:#991b1b}.b-info{background:#dbeafe;color:#1e40af}
+  .muted{color:var(--muted);font-size:13px}
+  .kv{font-size:14px;margin:2px 0;word-break:break-all}
+  .msg{padding:10px;border-radius:8px;margin:10px 0}
+  .msg.ok{background:#dcfce7}.msg.err{background:#fee2e2}
+  /* 浮動提示（2026-11-24 業主）：浮在畫面上方，幾秒後自動消失；換分頁、選了其他項目或按 × 也會消失 */
+  #flash{position:fixed;left:50%;top:108px;transform:translateX(-50%);width:calc(100% - 32px);max-width:640px;z-index:30;pointer-events:none}
+  #flash .msg{margin:0;display:flex;gap:10px;align-items:flex-start;box-shadow:0 6px 18px rgba(0,0,0,.18);pointer-events:auto;animation:ezfade .2s ease-out}
+  #flash .msg span{flex:1}
+  #flash .msg button{background:none;border:0;padding:0 4px;font-size:18px;line-height:1;cursor:pointer;color:#374151;width:auto}
+  @keyframes ezfade{from{opacity:0;transform:translateY(-6px)}to{opacity:1;transform:none}}
+  .hint{background:#fff7ed;border:1px solid #fed7aa;border-radius:8px;padding:10px;font-size:13px;margin-top:10px}
+  .hint:empty{display:none}
+  .picks{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+  .picks:empty{display:none}
+  .pick{border:1px solid #cbd5e1;background:#fff;border-radius:16px;padding:6px 12px;font-size:14px;cursor:pointer}
+  .pick:hover{background:#eff6ff;border-color:#93c5fd}
+  .pick.on{background:#dbeafe;border-color:#2563eb;font-weight:600}
+  /* 依序輸入：還不能填的欄位變灰；系統帶入後凍結的欄位 */
+  #f-fields input:disabled,#f-fields select:disabled,#f-fields textarea:disabled{background:#f1f5f9;color:#94a3b8;border-color:#e2e8f0;cursor:not-allowed}
+  #f-fields .seq-frozen,#f-fields input[readonly],#f-fields textarea[readonly]{background:#f1f5f9;color:#334155}
+  #f-fields label.seq-dim{color:#cbd5e1}
+  #f-fields .seq-off{opacity:.45;pointer-events:none}
+  .seq-redo{border:0;background:none;color:#2563eb;font-size:13px;padding:4px 0;cursor:pointer;text-decoration:underline}
+  .thumbs img{width:64px;height:64px;object-fit:cover;border-radius:6px;margin:4px}
+  .hidden{display:none}
+  h2{font-size:17px;margin:14px 0 6px}
+  .seg{display:flex;gap:6px;margin-top:6px}
+  .seg button{flex:1;padding:10px;border:1px solid var(--line);border-radius:8px;background:#fff}
+  .seg button.on{border-color:var(--brand);background:#eef2ff;color:var(--brand);font-weight:600}
+  .stat{display:inline-block;min-width:110px;margin:4px 8px 4px 0}.stat b{font-size:20px;display:block}
+  #caSeg,#sysSeg{flex-wrap:wrap}
+  /* 課表發佈 */
+  .sch-row{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;padding:6px 0;border-top:1px solid var(--line)}
+  .sch-row:first-child{border-top:0}
+  .sch-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:10px}
+  .sch-grid figure{margin:0}.sch-grid img{width:100%;border:1px solid var(--line);border-radius:8px;display:block;cursor:zoom-in}
+  .sch-grid figcaption{font-size:13px;color:var(--muted)}
+  .sch-veil{padding:10px 12px;border-radius:8px;background:#1f2937;color:#fff;margin:10px 0}
+  .sch-veil.failed{background:#fee2e2;color:#991b1b}
+  .sch-area.loading .card{opacity:.4;pointer-events:none}
+  .sch-prog{border:1px solid var(--line);border-radius:8px;padding:10px;margin-top:10px;background:#f8fafc}
+  .sch-prog ul{list-style:none;margin:6px 0 0;padding:0}.sch-prog li{padding:3px 0;color:var(--muted);display:flex;gap:8px}
+  .sch-prog li.done,.sch-prog li.active{color:var(--ink)}.sch-prog li.active{font-weight:600}.sch-prog time{margin-left:auto;font-size:12px}
+  .sch-err{border-radius:8px;padding:10px;margin-top:10px;border:1px solid #fecaca;background:#fef2f2}
+  .sch-err.admin{border-color:#fde68a;background:#fffbeb}.sch-err.retry{border-color:#bfdbfe;background:#eff6ff}
+  .sch-err h3{font-size:15px;margin:6px 0 4px}.sch-err p{margin:4px 0}
+  .sch-err details{font-size:13px;color:var(--muted)}.sch-err details ul{padding-left:18px;margin:4px 0;word-break:break-all}
+  .sch-pages{display:flex;flex-wrap:wrap;gap:6px 16px;margin:8px 0}.sch-pages label{display:flex;gap:4px;align-items:center;margin:0;color:var(--ink);font-size:15px}
+  .sch-pages input{width:auto}
+  .sch-confirm{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:8px}.sch-confirm input{max-width:160px}
+  #schZoom{position:fixed;inset:0;background:rgba(0,0,0,.88);display:none;overflow:auto;z-index:20}
+  #schZoom img{width:100%;min-width:900px;display:block}
+</style>
+</head>
+<body>
+<div id="busyBar"></div><div id="busyPill">系統處理中…</div>
+<header><h1>課務營運稽核系統</h1><div><span id="who" class="muted" style="color:#dbeafe"></span> <button id="btnLogout" class="hidden">登出</button></div></header>
+<nav id="nav" class="hidden"></nav>
+<main>
+  <div id="flash"></div>
+  <div id="schZoom" title="點一下關閉"><img alt=""></div>
+
+  <!-- 登入 -->
+  <section id="v-login" class="card">
+    <h2>登入</h2>
+    <div id="lg-line" class="msg ok hidden"></div>
+    <label>帳號</label><input id="lg-acc" autocomplete="username">
+    <label>密碼</label><input id="lg-pwd" type="password" autocomplete="current-password">
+    <label style="display:flex;gap:6px;align-items:center;font-weight:normal;margin-top:10px"><input type="checkbox" id="lg-keep" style="width:auto">保持登入（30 天內不用再輸入密碼；共用電腦請勿勾選）</label>
+    <div style="margin-top:14px"><button class="btn" id="btnLogin">登入</button></div>
+  </section>
+
+  <!-- 新增 -->
+  <section id="v-new" class="hidden">
+    <div class="card">
+      <label>門市<span class="req">*</span></label><select id="f-branch"></select>
+      <label>類型<span class="req">*</span></label>
+      <div class="seg" id="kindSeg"><button data-k="REPORT" class="on">報備（不需核准）</button><button data-k="APPLY">申請（需核准）</button></div>
+      <select id="f-type" style="margin-top:8px"></select>
+      <div id="f-fields"></div>
+      <div id="f-attach" style="display:none">
+        <label id="f-attach-label">請假證明<span class="req">*</span></label>
+        <input type="file" id="f-files" accept="image/*,application/pdf" multiple>
+        <div class="thumbs" id="f-thumbs"></div>
+      </div>
+      <div class="hint" id="f-hint"></div>
+      <div style="margin-top:14px"><button class="btn" id="btnSubmit">送出</button></div>
+    </div>
+  </section>
+
+  <!-- 我的記錄 -->
+  <section id="v-mine" class="hidden"><div id="mineList"></div></section>
+
+  <!-- 待核准 -->
+  <section id="v-pending" class="hidden"><div id="pendingList"></div></section>
+
+  <!-- 報備/申請記錄（2026-11-23 業主：打開分頁不自動載入，按查詢才列出） -->
+  <section id="v-all" class="hidden">
+    <div class="card">
+      <div class="row">
+        <div><label>狀態</label><select id="q-status"><option value="">全部</option></select></div>
+        <div><label>比對結果</label><select id="q-match"><option value="">全部</option></select></div>
+        <div><label>門市</label><select id="q-branch"><option value="">全部</option></select></div>
+        <div><label>類型</label><select id="q-type"><option value="">全部</option></select></div>
+      </div>
+      <div class="row">
+        <div><label>從</label><input type="date" id="q-from"></div>
+        <div><label>到</label><input type="date" id="q-to"></div>
+        <div><label>關鍵字</label><input id="q-q" placeholder="編號、會員、方案、課程、申請人"></div>
+      </div>
+      <div style="margin-top:10px"><button class="btn" id="btnQuery">查詢</button></div>
+    </div>
+    <div id="allList"></div>
+  </section>
+
+  <!-- 電子合約稽核 -->
+  <section id="v-ca" class="hidden">
+    <div class="seg" id="caSeg"></div>
+    <div id="ca-cases" class="ca-pane">
+      <div class="ca-admin">
+      <div class="card">
+        <h2>手動稽核</h2>
+        <p class="muted">每天 09:00 自動下載 17FIT 銷售總覽，和電子合約比對。手動查核不發 LINE 群組通知。</p>
+        <div class="row"><button class="btn sec" id="btnCaRecheck">只重新比對</button><button class="btn" id="btnCaRecheckSales">下載銷售資料＋比對（約 1 分鐘）</button></div>
+      </div>
+      </div>
+      <div class="card">
+        <div class="row">
+          <div><label>結果</label><select id="cq-result"><option value="">全部</option></select></div>
+          <div><label>狀態</label><select id="cq-status"><option value="">未結案</option><option value="ALL">全部</option></select></div>
+          <div><label>分店</label><select id="cq-branch"><option value="">全部</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>從</label><input type="date" id="cq-from"></div>
+          <div><label>到</label><input type="date" id="cq-to"></div>
+          <div><label>關鍵字</label><input id="cq-q" placeholder="案件編號、學員、方案、訂單"></div>
+        </div>
+        <div style="margin-top:10px"><button class="btn" id="btnCaQuery">查詢</button></div>
+      </div>
+      <div id="caList"></div>
+    </div>
+    <div id="ca-detail" class="ca-pane hidden"></div>
+    <div id="ca-gc" class="ca-pane hidden">
+      <div class="ca-admin">
+      <div class="card">
+        <h2>手動稽核：立即讀取 17FIT 課表</h2>
+        <p class="muted">每天自動讀一次（為了少登入一次 17FIT，和合約稽核下載銷售資料時同一次登入）。按這裡馬上做一次每日稽核：只讀本月課表並比對，不下載銷售資料、不發群組通知。下個月的課表由「月底課表比對」自己下載。</p>
+        <button class="btn" id="btnGcSync">立即讀取課表＋比對（約 1 分鐘）</button>
+      </div>
+      </div>
+      <div class="card">
+        <p class="muted">每天跟著合約稽核下載 17FIT 時比對本月團課課表。接上上班時間計劃（EZOne）後，基準是「定稿課表＋營業日曆＋教練請假」：停課、代課、改時間或課程、加開要事前送「團課異動」申請並核准；教練休假的代課、停課不用申請，但教練休假或公休日 17FIT 仍有排課、已核准的異動沒執行都算異常。還沒接上時，基準是本月第一次讀到的課表。17FIT 沒有修改紀錄，所以異動只知道發生在上一次與這一次檢查之間。</p>
+        <div class="row">
+          <div><label>月份</label><input type="month" id="gq-month"></div>
+          <div><label>結果</label><select id="gq-result"><option value="">異常（未結）</option><option value="ALL">全部異動</option></select></div>
+          <div><label>分店</label><select id="gq-branch"><option value="">全部</option></select></div>
+        </div>
+        <div style="margin-top:10px"><button class="btn" id="btnGcQuery">查詢</button></div>
+        <div class="muted" id="gc-info"></div>
+      </div>
+      <div id="gcList"></div>
+      <div class="card" id="gc-final-card">
+        <h2>月底課表比對（下個月）</h2>
+        <p class="muted">每月 25 日與最後一天 11:00，當下從 17FIT 下載下個月課表，對照課表發布台（EZDonSchedule）核准的定稿；下個月的上班時間計劃已發佈時，一併排除公休日、套用教練休假規則。結果發到群組（「團課異動群組通知」開啟時）。手動按要等機器人下載，約 1～2 分鐘。</p>
+        <div class="row"><div><label>月份（空白＝下個月；也可選本月測試）</label><input type="month" id="gf-month"></div></div>
+        <button class="btn sec" id="btnGcFinal">現在比對（不通知）</button>
+        <pre id="gc-final" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+        <div class="muted" id="gc-alias"></div>
+      </div>
+    </div>
+    <div id="ca-fit" class="ca-pane hidden">
+      <div class="card">
+        <h2>手動稽核</h2>
+        <p class="muted">每天 03:00 自動下載 17FIT「管理者異動方案紀錄」，連同合約稽核下載的銷售報表（$0 方案、結帳折扣），和報備、申請比對。$0 方案（BR 贈課、生日好禮、五星好評等）和結帳折扣都要有報備或申請。</p>
+        <div class="row">
+          <button class="btn" id="btnDaily">下載最近 3 天＋比對＋通知</button>
+          <button class="btn sec" id="btnRecon">只重新比對</button>
+        </div>
+        <h2>下載指定期間（最多 14 天）</h2>
+        <div class="row">
+          <div><label>從</label><input type="date" id="s-from"></div>
+          <div><label>到</label><input type="date" id="s-to"></div>
+        </div>
+        <div style="margin-top:10px"><button class="btn sec" id="btnSync">下載</button></div>
+      </div>
+      <div class="card">
+        <div class="row">
+          <div><label>檢查結果</label><select id="c-review">
+            <option value="UNREPORTED">無報備的異動</option><option value="SHIFT">調整開始日（不需報備）</option><option value="MATCHED">已對應報備</option>
+            <option value="OK">已確認無誤</option><option value="">全部</option></select></div>
+          <div><label>從</label><input type="date" id="c-from"></div>
+          <div><label>到</label><input type="date" id="c-to"></div>
+        </div>
+        <label>關鍵字</label><input id="c-q" placeholder="會員、方案、操作人、描述、原因">
+        <div style="margin-top:10px"><button class="btn" id="btnFit">查詢</button></div>
+      </div>
+      <div id="fitList"></div>
+    </div>
+    <div id="ca-att" class="ca-pane hidden">
+      <div class="card">
+        <h2>手動稽核</h2>
+        <p class="muted">檢查 17FIT「預約總覽」到指定日期（空白＝昨天）為止前 7 天，狀態仍是「尚未確認」的預約。「試跑」只列出會通知誰；「立即執行」依「系統維護 → 出席狀態確認」的狀態發送（測試＝只發給老闆），同一天同一位教練不會重複發。</p>
+        <div class="row"><div><label>檢查到哪一天</label><input type="date" id="at-day"></div></div>
+        <div class="row" style="margin-top:10px"><button class="btn sec" id="btnAtPreview">試跑（不發送）</button><button class="btn" id="btnAtRun">立即執行</button></div>
+        <div class="muted" id="at-state"></div>
+        <div id="at-preview"></div>
+      </div>
+      <div class="card">
+        <h2>稽核結果</h2>
+        <p class="muted">每筆「尚未確認」的預約是一個案件。教練在 17FIT 確認後，隔天稽核自動標成「教練已確認」；提醒 7 次仍未確認的列為「逾期未確認（已轉老闆）」，系統之後不再檢查，追蹤後請按「結案」。</p>
+        <div class="row">
+          <div><label>結果</label><select id="aq-result"><option value="">未結案</option><option value="ALL">全部</option><option value="PENDING">提醒中</option><option value="OVERDUE">逾期未確認（已轉老闆）</option><option value="CONFIRMED">教練已確認</option></select></div>
+        </div>
+        <div style="margin-top:10px"><button class="btn" id="btnAtQuery">查詢</button></div>
+        <div class="muted" id="at-info"></div>
+      </div>
+      <div id="atList"></div>
+    </div>
+    <div id="ca-va" class="ca-pane hidden">
+      <div class="card">
+        <h2>監視器影像稽核</h2>
+        <p class="muted">每月抽 1 天、每店 1 個時段，各看 5 分鐘錄影，由 AI 回報每間教室看到什麼；下個月 5 日以後用薪資來源資料的最終版 17FIT（開課及出席分析、預約總覽）加上上班時間計劃的公休日正式比對。<b>所有結果都是 AI 初步分析，不是確定事實，不作為處分依據</b>，請逐筆複核。</p>
+        <div class="row"><div><label>月份（空白＝最近一次抽查）</label><input type="month" id="vq-month"></div></div>
+        <div class="row" style="margin-top:10px"><button class="btn" id="btnVaView">查看</button><button class="btn sec" id="btnVaRun">立即讀取</button><button class="btn sec" id="btnVaRecompare">重新比對</button></div>
+        <div class="muted" id="va-state"></div>
+      </div>
+      <div id="vaSlots"></div>
+      <div class="card">
+        <h2>稽核結果</h2>
+        <p class="muted">疑似異常、待確認、無法判定的時段各開一個案件。結案時選：確認異常（填備註，供月中會議）、AI 誤判（填正確答案，之後回傳給 AI 改進）、經理已說明（體驗、諮詢、示範等）。重新比對後結論不再成立的案件不列在「未結案」。</p>
+        <div class="row">
+          <div><label>結果</label><select id="vq-result"><option value="">未結案</option><option value="ALL">全部</option><option value="BAD">疑似異常</option><option value="CHECK">待確認</option><option value="UNSURE">無法判定</option></select></div>
+        </div>
+        <div style="margin-top:10px"><button class="btn" id="btnVaQuery">查詢</button></div>
+        <div class="muted" id="va-info"></div>
+      </div>
+      <div id="vaList"></div>
+    </div>
+  </section>
+
+  <!-- 課表發佈（SchedCore.js；引擎在課表發佈台） -->
+  <section id="v-sched" class="hidden">
+    <div id="sch-blocked" class="card hidden"></div>
+    <div id="sch-body" class="hidden">
+      <div class="card">
+        <h2>1. 選擇月份</h2>
+        <div class="muted" id="sch-who"></div>
+        <select id="sch-month"></select>
+        <div class="muted" id="sch-monthNote" style="margin-top:6px"></div>
+      </div>
+      <div id="sch-area" class="sch-area">
+        <div id="sch-veil" class="sch-veil hidden" role="status" aria-live="polite"></div>
+        <div class="card">
+          <h2>2. 核對來源 Excel</h2>
+          <div id="sch-sources" class="muted">尚未讀取</div>
+          <div style="margin-top:10px"><button class="btn sec" id="btnSchSources">重新讀取來源</button></div>
+        </div>
+        <div class="card">
+          <h2>3. 製圖並送審</h2>
+          <div id="sch-reopen" class="hint hidden"></div>
+          <div id="sch-current" class="muted">—</div>
+          <div id="sch-progress" class="hidden" aria-live="polite"></div>
+          <div id="sch-error" class="hidden"></div>
+          <div style="margin-top:10px"><button class="btn" id="btnSchSubmit">製圖並送審</button>
+            <button class="btn sec hidden" id="btnSchRetry">重送失敗的對象</button>
+            <button class="btn sec hidden" id="btnSchResume">重新整理狀態</button></div>
+          <h2 style="margin-top:14px">送審對象與結果</h2>
+          <div id="sch-deliveries" class="muted">—</div>
+        </div>
+        <div class="card hidden" id="sch-previewCard">
+          <h2>預覽（6 張，點圖放大）</h2>
+          <div class="sch-grid" id="sch-previews"></div>
+        </div>
+        <div class="card hidden" id="sch-approveCard">
+          <h2>4. 核准定稿</h2>
+          <div class="muted">核准後本月鎖定，並歸檔到雲端硬碟。不會自動傳給美工。</div>
+          <div class="sch-confirm"><input id="sch-approveConfirm" inputmode="numeric" maxlength="6" placeholder="輸入月份確認">
+            <button class="btn ok" id="btnSchApprove">核准此版本</button></div>
+        </div>
+        <div class="card hidden" id="sch-doneCard">
+          <h2>已核准</h2>
+          <div id="sch-approved"></div>
+          <div style="margin-top:10px"><button class="btn sec" id="btnSchDownloads">取得下載連結</button></div>
+          <div id="sch-downloads"></div>
+          <div id="sch-handoff">
+            <h2 style="margin-top:14px">通知 Sarah</h2>
+            <div class="muted">24 日起定稿發佈：按「傳給 Sarah」，NANCY（人資姊姊）會把圖檔資料夾連結傳到 Sarah 所在的群組（知道連結的人都能檢視 6 張圖與 PDF）。傳送或記錄之前，課表發佈台每天會提醒 Angela。</div>
+            <div style="margin-top:8px"><button class="btn ok" id="btnSchSendSarah">傳給 Sarah（NANCY 傳到群組）</button> <button class="btn sec" id="btnSchHandoff">已用其他方式通知 Sarah</button></div>
+            <div id="sch-handoffDone"></div>
+          </div>
+          <details id="sch-revokeBox" style="margin-top:14px">
+            <summary><b>撤銷定稿（需要修正時）</b></summary>
+            <div class="muted">勾選要修正的頁面，重新製圖時只重做這些頁面，其他頁面保持已定稿的原圖。舊圖會移到歸檔資料夾的「已撤銷」，不會刪除。</div>
+            <div id="sch-revokePages" class="sch-pages"></div>
+            <input id="sch-revokeReason" maxlength="200" placeholder="撤銷原因（例如：中山週三教練更換）">
+            <div class="sch-confirm"><input id="sch-revokeConfirm" inputmode="numeric" maxlength="6" placeholder="輸入月份確認">
+              <button class="btn bad" id="btnSchRevoke">撤銷勾選頁面的定稿</button></div>
+          </details>
+        </div>
+        <div class="card">
+          <h2>版本紀錄</h2>
+          <div id="sch-versions" class="muted">—</div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- 系統 -->
+  <section id="v-sys" class="hidden">
+    <div class="seg" id="sysSeg"></div>
+
+    <!-- 方案異動（2026-11-23：學員名單） -->
+    <div id="sys-fit" class="sys-pane hidden">
+      <div class="card">
+        <h2>學員名單</h2>
+        <p class="muted">每天 02:00 自動下載 17FIT 全部學員的名稱（含卡號），表單的學員欄打字時直接從名單篩選；只存名稱與會員編號，不存手機。全部約 342 頁，要分幾段在背景接力下載，約 10～15 分鐘。</p>
+        <div class="muted" id="fm-state"></div>
+        <div style="margin-top:10px"><button class="btn sec" id="btnMembers">立即下載學員名單</button></div>
+      </div>
+      <div class="card">
+        <h2>機器人預演</h2>
+        <p class="muted">把最近 14 天的報備、申請照「機器人 17FIT 操作清單」到 17FIT 查一次（只讀，不改任何資料），列出機器人會怎麼做，或會卡在哪裡。約需 1～4 分鐘。</p>
+        <div><button class="btn sec" id="btnDryRun">開始預演</button></div>
+        <div id="dryRunOut"></div>
+      </div>
+      <div class="card">
+        <h2>機器人寫入實測（只限測試會員）</h2>
+        <p class="muted">用經理公用帳戶從伺服器登入 17FIT，對測試會員「測試機器人(請勿使用)」的指定方案場館給予 1 堂、再扣回 1 堂（原因 R0000-000），每一步讀回確認。只能動測試會員。</p>
+        <div class="row"><div><label>測試會員的方案編號</label><input id="rw-mcid" placeholder="例如 4158770"></div></div>
+        <div><button class="btn sec" id="btnRobotWrite">執行寫入實測</button></div>
+        <div id="robotWriteOut"></div>
+      </div>
+      <div class="card">
+        <h2>機器人執行設定</h2>
+        <p class="muted">報備送出、申請核准後，機器人馬上到 17FIT 做，做完把每一步「改前→改後」列在那一筆底下，請送出的經理確認。檢查沒過的機器人不動 17FIT，經理照舊自己做。</p>
+        <div class="row"><div><label>模式</label><select id="rb-mode"><option value="off">關閉</option><option value="test">只限測試會員</option><option value="on">開啟</option></select></div></div>
+        <div id="rb-types" class="kv"></div>
+        <div><button class="btn sec" id="btnRobotSave">儲存設定</button></div>
+      </div>
+      <div class="card">
+        <h2>機器人測試（只限測試會員）</h2>
+        <p class="muted">建立一筆測試會員的測試單（申請類直接標成已核准），讓機器人照正式流程做。不受上面的模式影響，一律只動測試會員。測試後 17FIT 的資料要另外改回。</p>
+        <div class="row"><div><label>類型</label><select id="rb-testType"></select></div></div>
+        <div><button class="btn sec" id="btnRobotTest">建立測試單並執行</button></div>
+        <div style="margin-top:6px"><button class="btn sec" id="btnRobotTestAll">一次跑完第 3 批測試（生日好禮、888、體驗折價、合併、轉讓、活動升級、折抵、退費）</button></div>
+        <div id="robotTestOut"></div>
+      </div>
+      <div class="card">
+        <h2>機器人執行紀錄</h2>
+        <div><button class="btn sec" id="btnRobotRuns">讀取最近 100 筆</button></div>
+        <div id="robotRunsOut"></div>
+      </div>
+      <h2>執行紀錄</h2>
+      <p class="muted">每天 03:00 自動下載最近 3 天的 17FIT 異動、和報備比對，有新問題才發 LINE 群組通知。</p>
+      <div id="fitRunList"></div>
+    </div>
+
+    <!-- 合約稽核 -->
+    <div id="sys-ca" class="sys-pane">
+      <div class="card">
+        <h2>合約稽核設定</h2>
+        <div class="row">
+          <div><label>LINE 群組摘要</label><select id="cs-notify"><option value="off">關閉（平行運作）</option><option value="on">開啟</option></select></div>
+          <div><label>每天重新下載前幾天</label><input type="number" id="cs-days" min="1" max="31"></div>
+        </div>
+        <label>失敗通知的管理員 LINE userId（逗號分隔；只發給個人，不發群組；各項稽核共用）</label><input id="cs-lineids" placeholder="U 開頭共 33 碼" autocomplete="off">
+        <div class="muted" id="cs-info"></div>
+        <div style="margin-top:10px"><button class="btn sec" id="btnCaSettings">儲存設定</button></div>
+      </div>
+      <h2>執行紀錄</h2>
+      <div id="caRunList"></div>
+    </div>
+
+    <!-- 團課異動稽核 -->
+    <div id="sys-gc" class="sys-pane hidden">
+      <div class="card">
+        <h2>團課異動稽核設定</h2>
+        <div class="row">
+          <div><label>群組通知（違規異動、月底課表比對）</label><select id="gs-notify"><option value="off">關閉（平行運作）</option><option value="on">開啟</option></select></div>
+        </div>
+        <h2 style="margin-top:14px">上班時間計劃（EZOne）</h2>
+        <p class="muted">接上後，每日稽核與月底比對都拿 17FIT 課表比「定稿課表＋營業日曆＋教練請假」：公休日有排課、教練休假仍排原教練、已核准的異動沒執行都列異常；教練休假的代課、停課算正常。只採用已發佈的計劃。</p>
+        <div class="row">
+          <div><label>EZOne 服務金鑰（空白＝不改）</label><input type="password" id="gs-ezkey" autocomplete="off" placeholder="EZOne 的 EZONE_SERVICE_KEY"></div>
+          <div><label>EZOne 網址（空白＝預設）</label><input id="gs-ezurl" autocomplete="off"></div>
+        </div>
+        <div class="muted" id="gs-ezinfo"></div>
+        <div class="muted" id="gs-info"></div>
+        <div style="margin-top:10px"><button class="btn sec" id="btnGcSettings">儲存設定</button> <button class="btn sec" id="btnGcTestPlan">測試讀取本月計劃</button></div>
+        <pre id="gs-plantest" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+      </div>
+      <h2>執行紀錄</h2>
+      <div id="gcRunList"></div>
+    </div>
+
+    <!-- 出席未確認提醒 -->
+    <div id="sys-att" class="sys-pane hidden">
+      <div class="card">
+        <h2>出席狀態確認提醒設定</h2>
+        <p class="muted">每天 10:00 下載 17FIT「預約總覽」前 7 天（到昨天）的資料，狀態仍是「尚未確認」的預約，用 Nancy 個別通知該堂教練；沒處理的每天累加提醒，第 7 次仍未處理的另外列給老闆。沒綁定 Nancy 的教練，清單改傳給老闆。</p>
+        <div class="row">
+          <div><label>狀態</label><select id="at-mode"><option value="off">關閉</option><option value="test">測試（只發給老闆）</option><option value="on">開啟（發給教練）</option></select></div>
+          <div><label>Nancy 推播權杖（空白＝不改）</label><input type="password" id="at-token" autocomplete="off" placeholder="LINE Developers → Nancy → Messaging API"></div>
+        </div>
+        <div class="muted" id="at-info"></div>
+        <div style="margin-top:10px"><button class="btn sec" id="btnAtSave">儲存設定</button></div>
+      </div>
+      <h2>執行紀錄</h2>
+      <div id="atLogList"></div>
+    </div>
+
+    <!-- 監視器影像稽核 -->
+    <div id="sys-va" class="sys-pane hidden">
+      <div class="card">
+        <h2>監視器影像稽核設定</h2>
+        <p class="muted">每天 09:00 每日稽核之後讀一次影像稽核服務（本月與上個月）；下個月 5 日以後、薪資來源資料到齊就正式比對，摘要發給「合約簽訂」設定裡的管理員。網址與金鑰都填好才會執行。</p>
+        <div class="row">
+          <div><label>影像稽核服務金鑰（空白＝不改）</label><input type="password" id="vs-key" autocomplete="off" placeholder="VIDEO_AUDIT_KEY"></div>
+          <div><label>影像稽核服務網址</label><input id="vs-url" autocomplete="off" placeholder="https://audit-api-…run.app"></div>
+        </div>
+        <div class="muted" id="vs-info"></div>
+        <div style="margin-top:10px"><button class="btn sec" id="btnVaSettings">儲存設定</button> <button class="btn sec" id="btnVaTest">測試讀取本月</button></div>
+        <pre id="vs-test" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+      </div>
+    </div>
+
+    <!-- 課表發佈 -->
+    <div id="sys-sched" class="sys-pane hidden">
+      <div class="card">
+        <h2>課表發佈：連接課表後台</h2>
+        <p class="muted">「課表發佈」分頁透過課表後台 API 操作（製圖、送審紀錄、歸檔、LINE 推播都仍在課表發佈台）。金鑰要和課表後台的指令碼屬性 <code>AUDIT_SERVICE_KEY</code> 完全相同（至少 32 字元），儲存後畫面不再顯示。</p>
+        <div class="row">
+          <div><label>課表後台金鑰（空白＝不改）</label><input type="password" id="ss-key" autocomplete="off" placeholder="和 AUDIT_SERVICE_KEY 相同"></div>
+          <div><label>課表後台 API 網址（空白＝預設）</label><input id="ss-url" autocomplete="off"></div>
+        </div>
+        <div class="muted" id="ss-info"></div>
+        <div style="margin-top:10px"><button class="btn sec" id="btnSsSave">儲存設定</button> <button class="btn sec" id="btnSsTest">測試連線</button></div>
+        <pre id="ss-test" style="white-space:pre-wrap;margin:8px 0 0"></pre>
+      </div>
+      <div class="card">
+        <h2>誰可以操作</h2>
+        <p class="muted" style="margin:0">每個人用<b>自己的帳號</b>操作課表發佈（核准紀錄要能分辨是誰）；<code>admin</code> 是業主的個人帳號，不要和別人共用。<code>system</code> 保留給月底比對排程。</p>
+        <ol class="muted" style="padding-left:18px">
+          <li>在「帳號」新增 <code>angela</code>、<code>vincent</code> 兩個帳號（角色選經理或管理員都可以；要改系統維護才需要管理員）。</li>
+          <li>課表後台的指令碼屬性 <code>AUDIT_ROLES</code> 要列出同樣的帳號名稱（不分大小寫），例如 <code>{"angela":["operator","approver"],"vincent":["operator","approver"],"system":["reader"]}</code>。能不能製圖、核准完全由那邊決定，稽核系統不另外判斷。</li>
+          <li>用個人帳號登入後按「測試連線」，應看到 <code>audit:angela</code> 與角色。</li>
+        </ol>
+      </div>
+    </div>
+
+    <!-- 帳號 -->
+    <div id="sys-acc" class="sys-pane hidden">
+      <div class="card">
+        <h2>新增／修改帳號</h2>
+        <div class="row">
+          <div><label>帳號（英數字）</label><input id="a-acc"></div>
+          <div><label>顯示名稱</label><input id="a-name"></div>
+        </div>
+        <div class="row">
+          <div><label>角色</label><select id="a-role"><option value="MANAGER">經理</option><option value="ADMIN">管理員</option></select></div>
+          <div><label>門市</label><select id="a-branch"><option value="">（無）</option></select></div>
+          <div><label>狀態</label><select id="a-status"><option value="ACTIVE">啟用</option><option value="DISABLED">停用</option></select></div>
+        </div>
+        <div class="row">
+          <div><label>稽核結果：可看的分店（逗號分隔；管理員一律全部）</label><input id="a-cabr" placeholder="例如 中山,內壢"></div>
+          <div><label>稽核結果權限</label><select id="a-caperm"><option value="">無</option><option value="VIEW">只看</option><option value="HANDLE">可處理案件</option></select></div>
+        </div>
+        <label>密碼（新帳號必填；修改時留空代表不變）</label><input id="a-pwd" type="password" autocomplete="new-password">
+        <label style="display:flex;gap:6px;align-items:center;font-weight:normal"><input type="checkbox" id="a-clearline" style="width:auto">清除這個帳號的 LINE 登入綁定（換手機、離職或綁錯人時使用）</label>
+        <div style="margin-top:10px"><button class="btn" id="btnAcc">儲存</button></div>
+      </div>
+      <div id="accList"></div>
+    </div>
+
+    <!-- 我的密碼 -->
+    <div id="sys-pwd" class="sys-pane hidden">
+      <div class="card">
+        <h2>修改我的密碼</h2>
+        <label>舊密碼</label><input id="p-old" type="password">
+        <label>新密碼（至少 8 字）</label><input id="p-new" type="password">
+        <div style="margin-top:10px"><button class="btn sec" id="btnPwd">修改</button></div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<script>
+var S = { token: null, boot: null, kind: 'REPORT', files: [], bindTicket: null, go: null };
+try { S.token = sessionStorage.getItem('ezr_token'); } catch (e) {}
+
+function $(id){ return document.getElementById(id); }
+function esc(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function runGs(fn, args){
+  return new Promise(function(res, rej){
+    var r = google.script.run.withSuccessHandler(res).withFailureHandler(rej);
+    r[fn].apply(r, args);
+  });
+}
+/* 保持登入：憑證存在 localStorage（ezr_keep），登入逾時就用它換新的登入再重試一次 */
+function keepGet(){ try { return localStorage.getItem('ezr_keep') || ''; } catch (e) { return ''; } }
+function keepSet(v){ try { if (v) localStorage.setItem('ezr_keep', v); else localStorage.removeItem('ezr_keep'); } catch (e) {} }
+var resuming = null;
+function resumeKeep(){
+  if (!resuming) resuming = runGs('resumeLogin', [keepGet()]).then(function(r){
+    S.token = r.token; try { sessionStorage.setItem('ezr_token', r.token); } catch (e) {}
+    return r;
+  }, function(e){ keepSet(''); throw e; }).finally(function(){ resuming = null; });
+  return resuming;
+}
+function call(fn){
+  var args = Array.prototype.slice.call(arguments, 1);
+  busyGlobal(1);
+  var done = function(){ busyGlobal(-1); };
+  return runGs(fn, args).catch(function(e){
+    if (!/登入逾時/.test(e && e.message)) throw e;
+    if (!keepGet()) { doLogout(true); throw e; }
+    var old = S.token;
+    return resumeKeep().then(function(){
+      return runGs(fn, args.map(function(a){ return a === old && old ? S.token : a; }));
+    }, function(e2){ doLogout(true); throw e2; });
+  }).then(function(v){ done(); return v; }, function(e){ done(); throw e; });
+}
+var FLASH_T = null;
+function flash(text, ok){
+  clearTimeout(FLASH_T);
+  $('flash').innerHTML = '<div class="msg ' + (ok ? 'ok' : 'err') + '"><span>' + esc(text) + '</span><button type="button" title="關閉" aria-label="關閉">×</button></div>';
+  $('flash').querySelector('button').onclick = flashClear;
+  FLASH_T = setTimeout(flashClear, ok ? 4000 : 8000);
+}
+function flashClear(){ clearTimeout(FLASH_T); $('flash').innerHTML = ''; }
+// 使用者選了其他項目（下拉選單、勾選、日期等）就先清掉舊提示；程式自己觸發的 change 不清
+document.addEventListener('change', function(e){ if (e.isTrusted) flashClear(); }, true);
+function busy(btn, on){ if (btn) { btn.disabled = on; btn.classList.toggle('busy', !!on); } }
+/** 有伺服器工作在跑時顯示跑馬條與「系統處理中」（同時好幾件也只顯示一個） */
+var BUSY_N = 0;
+function busyGlobal(d){
+  BUSY_N = Math.max(0, BUSY_N + d);
+  var on = BUSY_N > 0, bar = $('busyBar'), pill = $('busyPill');
+  if (bar) bar.style.display = on ? 'block' : 'none';
+  if (pill) pill.style.display = on ? 'flex' : 'none';
+}
+
+/* ===== 登入 ===== */
+$('btnLogin').onclick = function(){
+  var b = this; busy(b, true);
+  call('login', $('lg-acc').value, $('lg-pwd').value, S.bindTicket, $('lg-keep').checked).then(function(r){
+    S.token = r.token; try { sessionStorage.setItem('ezr_token', r.token); } catch (e) {}
+    keepSet(r.remember || '');
+    $('lg-pwd').value = ''; S.bindTicket = null; $('lg-line').classList.add('hidden');
+    return start().then(function(){
+      if (r.lineBound) flash('已綁定你的 LINE，之後從 LINE 通知點進來會自動登入', true);
+      else if (r.lineBindError) flash(r.lineBindError);
+    });
+  }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
+};
+$('lg-pwd').addEventListener('keydown', function(e){ if (e.key === 'Enter') $('btnLogin').click(); });
+$('btnLogout').onclick = function(){ doLogout(false); };
+function doLogout(expired){
+  if (!expired && (S.token || keepGet())) runGs('logout', [S.token, keepGet()]).catch(function(){});
+  if (!expired) keepSet('');
+  S.token = null; try { sessionStorage.removeItem('ezr_token'); } catch (e) {}
+  if (typeof CA !== 'undefined') { CA.boot = null; CA.pane = 'cases'; }
+  S.allQueried = false; $('allList').innerHTML = '';
+  show('login'); $('nav').classList.add('hidden'); $('btnLogout').classList.add('hidden'); $('who').textContent = '';
+  if (expired) flash('登入逾時，請重新登入');
+}
+
+function start(){
+  return call('getBootstrap', S.token).then(function(b){
+    S.boot = b;
+    $('who').textContent = b.me.displayName;
+    $('btnLogout').classList.remove('hidden');
+    buildNav(); buildNewForm(); buildFilters();
+    show('new');
+    if (S.go) { var g = S.go; S.go = null; goTo(g); }
+  });
+}
+/* LINE 通知帶來的目的地：報備編號（例如 R2611-015）、pending（待核准）、ca（合約稽核） */
+function goTo(g){
+  var me = S.boot.me;
+  if (/^R\d{4}-\d{1,4}$/.test(g)) {
+    if (me.role === 'ADMIN') { $('q-status').value = ''; $('q-match').value = ''; $('q-branch').value = ''; $('q-from').value = ''; $('q-to').value = ''; $('q-q').value = g; show('all'); loadAll(); }
+    else show('mine');
+  } else if (g === 'pending' && me.role === 'ADMIN') show('pending');
+  else if (g === 'ca' && me.ca && me.ca.view) show('ca');
+  else if (g === 'sched' && me.sched && (me.sched.configured || me.role === 'ADMIN')) show('sched');
+}
+
+/* ===== 導覽 ===== */
+var TABS = [['new','新增報備'],['mine','我的記錄']];
+var ADMIN_TABS = [['pending','待核准'],['all','報備/申請記錄'],['sys','系統維護']];
+function buildNav(){
+  var tabs = TABS.concat(S.boot.me.role === 'ADMIN' ? ADMIN_TABS : [['sys','系統維護']]);
+  if (S.boot.me.ca && S.boot.me.ca.view) tabs.splice(2, 0, ['ca','稽核結果']);
+  var sc = S.boot.me.sched;
+  if (sc && (sc.configured || S.boot.me.role === 'ADMIN')) tabs.splice(tabs.length - 1, 0, ['sched','課表發佈']);
+  $('nav').innerHTML = tabs.map(function(t){ return '<button data-v="' + t[0] + '">' + t[1] + '</button>'; }).join('');
+  $('nav').classList.remove('hidden');
+  Array.prototype.forEach.call($('nav').children, function(b){ b.onclick = function(){ show(b.dataset.v); }; });
+}
+function show(v){
+  flashClear();
+  ['login','new','mine','pending','all','sys','ca','sched'].forEach(function(x){ $('v-' + x).classList.toggle('hidden', x !== v); });
+  Array.prototype.forEach.call($('nav').children, function(b){ b.classList.toggle('on', b.dataset.v === v); });
+  if (v === 'mine') loadMine();
+  if (v === 'pending') loadPending();
+  if (v === 'all' && !S.allQueried) $('allList').innerHTML = '<p class="muted">請設定條件後按「查詢」。</p>';
+  if (v === 'sys') sysOpen();
+  if (v === 'ca') caOpen();
+  if (v === 'sched') schOpen(); else if (typeof schLeave === 'function') schLeave();
+  var adminOnly = S.boot && S.boot.me.role !== 'ADMIN';
+  Array.prototype.forEach.call(document.querySelectorAll('#v-sys .card'), function(c, i){ if (i === 0) c.classList.toggle('hidden', adminOnly); });
+}
+
+/* ===== 新增表單 ===== */
+function buildNewForm(){
+  var b = S.boot;
+  $('f-branch').innerHTML = '<option value="">請選擇</option>' + b.branches.map(function(x){
+    return '<option' + (x === b.me.branch ? ' selected' : '') + '>' + esc(x) + '</option>'; }).join('');
+  Array.prototype.forEach.call($('kindSeg').children, function(btn){
+    btn.onclick = function(){ S.kind = btn.dataset.k;
+      Array.prototype.forEach.call($('kindSeg').children, function(x){ x.classList.toggle('on', x === btn); });
+      fillTypes(); };
+  });
+  fillTypes();
+  if (!$('dl-contracts')) {
+    var dl = document.createElement('datalist'); dl.id = 'dl-contracts';
+    dl.innerHTML = b.contracts.map(function(c){ return '<option value="' + esc(c) + '">'; }).join('');
+    document.body.appendChild(dl);
+  }
+}
+function fillTypes(){
+  var types = S.boot.types;
+  $('f-type').innerHTML = Object.keys(types).filter(function(k){ return types[k].kind === S.kind; })
+    .map(function(k){ return '<option value="' + k + '">' + esc(types[k].label) + '</option>'; }).join('');
+  $('f-type').onchange = renderFields;
+  renderFields();
+}
+/**
+ * 先選學員，再從他的方案裡選（2026-11-23 業主）：選了學員後到 17Fit 讀他的有效方案（只讀），
+ * 方案欄位（Config 標 ofMember）改成只列這些方案；選了方案後，「原到期日」自動帶入。讀不到時照舊用全部方案清單。
+ */
+/**
+ * 取消預約（2026-11-23 業主：索引第 3 步）：選了學員後列出他最近 30 天到未來的預約，點一筆就帶入課程、上課時間與預約編號。
+ * 讀不到時照舊手動填。
+ */
+function setupBookings(){
+  var box = document.createElement('div'); box.className = 'hint';
+  var list = document.createElement('div'); list.className = 'picks'; list.id = 'bk-picks';
+  var anchor = $('fld-course');
+  anchor.parentNode.insertBefore(box, anchor.previousSibling);
+  anchor.parentNode.insertBefore(list, anchor.previousSibling);
+  var seq = 0, loaded = null;
+  var wk = ['日','一','二','三','四','五','六'];
+  var label = function(b){
+    var d = new Date(b.at.replace(' ', 'T') + ':00');
+    return b.at.slice(5, 10).replace('-', '/') + '(' + wk[d.getDay()] + ') ' + b.at.slice(11) + ' ' + b.course + (b.branch ? '｜' + b.branch : '') + (b.status ? '｜' + b.status : '');
+  };
+  var pick = function(b, btn){
+    if (btn.classList.contains('on')) { // 再點一次：取消選取，改成手動填寫
+      $('fld-course').value = ''; $('fld-courseAt').value = ''; $('fld-bookingId').value = '';
+      btn.classList.remove('on'); return;
+    }
+    $('fld-course').value = b.course;
+    $('fld-courseAt').value = b.at.replace(' ', 'T');
+    $('fld-bookingId').value = b.id;
+    Array.prototype.forEach.call(list.children, function(x){ x.classList.toggle('on', x === btn); });
+  };
+  var load = function(){
+    var el = $('fld-member'), m = el.value.trim();
+    if (!m || el.dataset.picked !== m || m === loaded) return;
+    loaded = m; var my = ++seq;
+    list.innerHTML = ''; box.textContent = '到 17Fit 讀取這位學員的預約…';
+    call('memberBookings', S.token, m).then(function(r){
+      if (my !== seq) return;
+      if (!r.found) { loaded = null; box.textContent = '17Fit 找不到這位學員，請手動填寫課程與時間。'; return; }
+      // 2026-11-23 業主：已出席、缺席、已取消的預約不能再取消，伺服器端已排除（memberBookings）
+      if (!r.bookings.length) { box.textContent = '這位學員最近 30 天沒有可取消的預約（已出席、缺席、已取消的不列出），請手動填寫課程與時間。'; return; }
+      box.textContent = '點選要取消的預約（最近 30 天到未來，已出席、缺席、已取消的不列出；也可以手動填寫下面的欄位）：';
+      list.innerHTML = r.bookings.map(function(b, i){ return '<button type="button" class="pick" data-i="' + i + '">' + esc(label(b)) + '</button>'; }).join('');
+      Array.prototype.forEach.call(list.children, function(btn){
+        btn.onmousedown = function(e){ e.preventDefault(); };
+        btn.onclick = function(){ pick(r.bookings[+btn.dataset.i], btn); };
+      });
+    }).catch(function(e){ if (my === seq) { loaded = null; box.textContent = '讀取預約失敗：' + (e && e.message || e) + '（請手動填寫）'; } });
+  };
+  $('fld-member').addEventListener('change', load);
+  $('fld-member').addEventListener('input', function(){ if ($('fld-member').value.trim() !== loaded) { loaded = null; seq++; list.innerHTML = ''; box.textContent = '';
+    if ($('fld-bookingId').value) { $('fld-course').value = ''; $('fld-courseAt').value = ''; } $('fld-bookingId').value = ''; } });
+  ['fld-course', 'fld-courseAt'].forEach(function(id){ $(id).addEventListener('input', function(){ $('fld-bookingId').value = ''; Array.prototype.forEach.call(list.children, function(x){ x.classList.remove('on'); }); }); });
+}
+/**
+ * 取消預約 B 類的正確課程（2026-11-23 業主）：選了日期和分店後，列出 17FIT 課表上該分店當天的所有課（開始時間＋課名）。
+ * 課表來自每日稽核的快照（本月、下個月）；快照沒有涵蓋的日期改成手動輸入。
+ */
+/**
+ * 單堂體驗折價（2026-11-24 業主）：選了會員後到 17Fit 讀他買的單堂付費訂單（還能退的），點選後帶入品項、購買日、退費金額。
+ */
+function setupTrialOrders(){
+  var sel = $('fld-singleOrder'), hint = document.createElement('div'); hint.className = 'hint';
+  sel.parentNode.insertBefore(hint, sel.nextSibling);
+  var orders = null, seq = 0, loaded = null;
+  var setHidden = function(){
+    var o = (orders || []).filter(function(x){ return x.orderId === sel.value; })[0];
+    $('fld-singleItem').value = o ? o.product : ''; $('fld-singleDate').value = o ? o.date : '';
+    $('fld-singlePrice').value = o ? o.canRefund : ''; $('fld-singleContractId').value = o ? o.mcid : '';
+    if (o) hint.innerHTML = '這筆訂單要退費 <b>' + esc(o.canRefund) + ' 元</b>（' + esc(o.product) + '，' + esc(o.date) + ' 購買' + (o.paid !== o.canRefund ? '，實付 ' + esc(o.paid) + ' 元' : '') +
+      '）；成交的正式方案要是<b>' + (o.pt ? '私人教練課' : '團課') + '</b>方案（照原價購買），系統會再把它場館扣除 1 堂。';
+    else if (orders && orders.length) hint.textContent = '請選擇學生當初買的單堂付費訂單。';
+  };
+  sel.addEventListener('change', setHidden);
+  var reset = function(text){ orders = null; sel.innerHTML = '<option value="">' + text + '</option>'; setHidden(); hint.textContent = ''; sel.dispatchEvent(new Event('change')); };
+  var load = function(){
+    var el = $('fld-member'), m = el.value.trim();
+    if (m && (el.dataset.picked !== m || m === loaded)) return;
+    loaded = m; var my = ++seq;
+    if (!m) { reset('先選會員'); return; }
+    reset('到 17Fit 讀取單堂付費訂單…');
+    call('trialOrders', S.token, m).then(function(r){
+      if (my !== seq) return;
+      if (!r.found) { loaded = null; reset('找不到會員'); hint.textContent = '17Fit 找不到這位會員。'; return; }
+      orders = r.orders;
+      if (!orders.length) {
+        sel.innerHTML = '<option value="">沒有可以退費的單堂付費訂單</option>'; setHidden();
+        hint.innerHTML = '<span style="color:#b91c1c">⛔ 這位會員沒有可以退費的單堂付費訂單（已經退過的不列）</span>';
+        sel.dispatchEvent(new Event('change')); return;
+      }
+      sel.innerHTML = '<option value="">請選擇（共 ' + orders.length + ' 筆）</option>' + orders.map(function(o){
+        return '<option value="' + esc(o.orderId) + '">' + esc(o.date + '｜' + o.product + '｜可退 ' + o.canRefund + ' 元｜訂單 ' + o.orderId) + '</option>';
+      }).join('');
+      if (orders.length === 1) sel.value = orders[0].orderId;
+      sel.dispatchEvent(new Event('change'));
+    }).catch(function(e){ if (my === seq) { loaded = null; hint.textContent = '讀取單堂付費訂單失敗：' + (e && e.message || e); } });
+  };
+  $('fld-member').addEventListener('change', load);
+  $('fld-member').addEventListener('input', function(){ if ($('fld-member').value.trim() !== loaded) { loaded = null; seq++; reset('先選會員'); } });
+}
+function setupClassPick(){
+  var sel = $('fld-correctCourse'), hint = document.createElement('div'); hint.className = 'hint';
+  sel.parentNode.insertBefore(hint, sel.nextSibling);
+  var manual = document.createElement('input'); manual.placeholder = '課表查不到這天，請輸入 開始時間 課程名稱，例如 20:00 智能飛輪'; manual.style.display = 'none';
+  sel.parentNode.insertBefore(manual, sel.nextSibling);
+  var seq = 0;
+  // 送出時讀 fld-correctCourse：手動輸入時把文字放進 select 的唯一選項
+  manual.addEventListener('input', function(){
+    var v = manual.value.trim(), d = $('fld-correctDate').value;
+    sel.innerHTML = '<option value="' + esc(v ? d + ' ' + v : '') + '"></option>'; sel.value = v ? d + ' ' + v : '';
+  });
+  var load = function(){
+    var d = $('fld-correctDate').value, b = $('fld-correctBranch').value, my = ++seq;
+    manual.style.display = 'none'; manual.value = ''; sel.style.display = '';
+    if (!d || !b) { sel.innerHTML = '<option value="">先選日期和分店</option>'; hint.textContent = ''; return; }
+    var ct = $('fld-contract').value.trim(), cat = $('fld-category').value;
+    if (/^B/.test(cat) && !ct) { sel.innerHTML = '<option value="">先選扣課的方案</option>'; hint.textContent = '要先選扣課的方案，系統才能列出這個方案約得到的課。'; return; }
+    sel.innerHTML = '<option value="">讀取課表中…</option>'; hint.textContent = '';
+    call('branchClasses', S.token, d, b, ct, cat).then(function(r){
+      if (my !== seq) return;
+      if (!r.found || !r.classes.length) {
+        sel.style.display = 'none'; sel.innerHTML = '<option value=""></option>'; manual.style.display = '';
+        var hd = r.hidden || {};
+        hint.textContent = r.found ? b + ' ' + d + ' 沒有可以預約的課' + (hd.started || hd.full || hd.bed ? '（' + [hd.started ? '已開始 ' + hd.started + ' 堂' : '', hd.full ? '額滿 ' + hd.full + ' 堂' : '', hd.bed ? '這個方案約不到的器械課 ' + hd.bed + ' 堂' : ''].filter(String).join('、') + '）' : '') + '，請確認日期和分店，或手動輸入。' :
+          '系統的 17FIT 課表只有本月和下個月，這天查不到，請手動輸入。';
+        return;
+      }
+      var hd2 = r.hidden || {};
+      hint.textContent = (r.live ? '17Fit 即時課表，' : '課表快照（讀不到 17Fit 即時課表，名額可能不準），') + '只列還沒開始、還有名額' + (hd2.bed ? '、這個方案約得到' : '') + '的課' +
+        (hd2.started || hd2.full || hd2.bed ? '（沒列出：' + [hd2.started ? '已開始 ' + hd2.started + ' 堂' : '', hd2.full ? '額滿 ' + hd2.full + ' 堂' : '', hd2.bed ? '器械皮拉提斯／核心床 ' + hd2.bed + ' 堂（方案名稱要有 888、皮拉提斯、核心床或全課程）' : ''].filter(String).join('、') + '）' : '') + '。';
+      sel.innerHTML = '<option value="">請選擇課程（共 ' + r.classes.length + ' 堂）</option>' + r.classes.map(function(c){
+        return '<option value="' + esc(d + ' ' + c.start + ' ' + c.title) + '">' + esc(c.start + ' ' + c.title + (c.coach ? '｜' + c.coach : '') + (c.left !== null && c.left !== undefined ? '｜剩 ' + c.left + ' 位' : '')) + '</option>';
+      }).join('');
+    }).catch(function(e){
+      if (my !== seq) return;
+      sel.style.display = 'none'; sel.innerHTML = '<option value=""></option>'; manual.style.display = '';
+      hint.textContent = '讀取課表失敗：' + (e && e.message || e) + '（請手動輸入）';
+    });
+  };
+  ['fld-correctDate', 'fld-correctBranch', 'fld-contract', 'fld-category'].forEach(function(id){ $(id).addEventListener('change', load); });
+}
+/**
+ * 依方案種類篩選的方案選單（2026-11-23 業主；Config 欄位 type 'planPick'、pick 規則）：
+ * 選了會員後到 17Fit 讀他的有效方案，只列符合條件的方案（標開始日、剩餘堂數、到期日），符合的只有一個就預選；
+ * 沒有符合的方案時顯示提示。選到的方案的 17FIT 方案編號放在隱藏欄位 <key>Id，同名方案不會混淆。
+ */
+var PLAN_PICK_EMPTY = {
+  EXTEND: '這位會員沒有需要展延的方案（只有有到期日的方案才需要展延）',
+  TRIAL_DISCOUNT: '沒有可供折價的正式方案',
+  REFUND: '這位會員沒有可以退費的方案（0 元贈送的方案、已經沒有堂數的方案不能退費）',
+  OFFSET: '這位會員沒有可以折抵的方案（要還有堂數、付費買的方案）',
+  MERGE: '沒有可合併的方案（要有兩個相同的乖寶寶方案）',
+  EXTEND_ADDON: '不符合展延(加購其他方案)條件（會員要有一個有到期日的乖寶寶方案和一個私人教練課方案）',
+  LEAVE: '這位會員沒有需要展延的方案（只有有補課期限、有到期日的方案可以請假）',
+  UPGRADE: '沒有符合活動條件的方案'
+};
+var EXTEND_TYPES = ['EXTEND', 'EXTEND_ADDON', 'LEAVE'];
+function planLabel(p){
+  return p.name + '｜' + (p.start ? p.start + ' 起' : '開始日不明') + (p.remaining !== '' ? '｜剩 ' + p.remaining + ' 堂' : '') + (p.end ? '｜到 ' + p.end : '｜無期限') + (p.paused ? '｜暫停中' : '');
+}
+function setupPlanPick(def){
+  var t = $('f-type').value;
+  var fields = def.fields.filter(function(f){ return f.type === 'planPick' && $('fld-' + f.key); });
+  if (!fields.length || !$('fld-member')) return;
+  var info = document.createElement('div'); info.className = 'hint';
+  var anchor = $('dl-fld-member') || $('fld-member');
+  anchor.parentNode.insertBefore(info, anchor.nextSibling);
+  var plans = null, seq = 0, loaded = null;
+  var byId = function(id){ return (plans || []).filter(function(p){ return p.id === id; })[0] || null; };
+  var picked = function(key){ var sel = $('fld-' + key), o = sel.options[sel.selectedIndex]; return o && o.dataset.id ? byId(o.dataset.id) : null; };
+  var campaignId = function(){ var c = (S.boot.upCampaigns || []).filter(function(x){ return x.label === ($('fld-campaign') || {}).value; })[0]; return c ? c.id : ''; };
+  var rules = {
+    baby: function(p){ return p.isBaby; },
+    // 展延(加購)：加購的私教方案要在乖寶寶方案到期日之前買的
+    pt: function(p){ var b = t === 'EXTEND_ADDON' ? picked('contract') : null; return p.isPT && (!b || !b.end || !p.start || p.start <= b.end); },
+    limited: function(p){ return p.limited === true; },
+    upgrade: function(p){ return !!p.upCampaign && p.upCampaign === campaignId(); },
+    mergeOld: function(p){ return p.isBaby && Number(p.remaining) > 0 && plans.filter(function(q){ return q.isBaby && q.key === p.key; }).length >= 2; },
+    // 2026-11-24 業主：退費不列 0 元贈送、已經沒有堂數的方案；折抵只列還有堂數、付費買的方案
+    refund: function(p){ return !p.isGift && p.remaining !== 0; },
+    // 單堂體驗折價：正式方案不能是單堂付費、0 元方案，要和選的單堂付費同類（團課對團課、私人教練課對私人教練課）
+    trialDeal: function(p){ var it = ($('fld-singleItem') || {}).value; if (!it) return false; return !p.isGift && !/單堂/.test(p.name) && !!p.pt === /私人教練|皮拉提斯床|1對[12]|一對[一二]|PT/i.test(it); },
+    offset: function(p){ return !p.isGift && (p.remaining === '' || Number(p.remaining) > 0); },
+    mergeNew: function(p){ var o = picked('contract'); return !!o && p.isBaby && p.key === o.key && p.id !== o.id; }
+  };
+  var setVal = function(id, v){ var el = $(id); if (!el || el.value === String(v)) return; el.value = v; el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change')); };
+  // 活動升級：「升級成」只列原方案可以升級成的新方案
+  var upNewAll = null;
+  var filterUpNew = function(p){
+    var sel = $('fld-newContract'); if (!sel || sel.tagName !== 'SELECT') return;
+    if (!upNewAll) upNewAll = Array.prototype.map.call(sel.options, function(o){ return o.value; }).filter(String);
+    var clean = function(n){ return String(n).replace(/\(現金優惠\)$/, '').trim(); };
+    var ok = p ? upNewAll.filter(function(n){ return (p.upTo || []).indexOf(clean(n)) >= 0; }) : upNewAll;
+    var keep = sel.value;
+    sel.innerHTML = '<option value="">' + (p && !ok.length ? '這個方案沒有可以升級的新方案' : '請選擇') + '</option>' + ok.map(function(n){ return '<option>' + esc(n) + '</option>'; }).join('');
+    sel.value = ok.indexOf(keep) >= 0 ? keep : ok.length === 1 ? ok[0] : '';
+    if (sel.value !== keep) sel.dispatchEvent(new Event('change'));
+  };
+  var after = function(f){
+    var p = picked(f.key);
+    if ($('fld-' + f.key + 'Id')) $('fld-' + f.key + 'Id').value = p ? p.id : '';
+    if (f.key === 'contract' && t === 'UPGRADE') filterUpNew(p);
+    if (f.key === 'contract' && EXTEND_TYPES.indexOf(t) >= 0) setVal('fld-oldEnd', p && p.end || '');
+    if (f.key === 'addOnContract') setVal('fld-addOnDate', p && p.start || '');
+    if (f.key === 'contract' && t === 'MERGE') setVal('fld-qty', p && p.remaining !== '' ? p.remaining : '');
+  };
+  var fill = function(f){
+    var sel = $('fld-' + f.key), cur = sel.options[sel.selectedIndex], keep = cur && cur.dataset.id;
+    if (!plans) { sel.innerHTML = '<option value="">' + (t === 'UPGRADE' && !campaignId() ? '先選活動和會員' : '先選會員') + '</option>'; after(f); return 0; }
+    if (t === 'UPGRADE' && !campaignId()) { sel.innerHTML = '<option value="">請先選活動</option>'; after(f); return 0; }
+    var list = plans.filter(rules[f.pick] || function(){ return true; });
+    // 2026-11-24 業主：展延類（BR贈送、加購、請假）展延的方案一定要有到期日，沒有期限的不用展延
+    if (f.key === 'contract' && EXTEND_TYPES.indexOf(t) >= 0) list = list.filter(function(p){ return !!p.end; });
+    // 合併：舊方案從開始日早的排起，新方案從開始日晚的排起
+    list.sort(function(a, b){ var x = a.start || '', y = b.start || ''; return f.pick === 'mergeNew' ? (x < y ? 1 : x > y ? -1 : 0) : (x < y ? -1 : x > y ? 1 : 0); });
+    sel.innerHTML = '<option value="">' + (list.length ? '請選擇' : f.pick === 'mergeNew' ? '先選被合併的舊方案' : f.pick === 'trialDeal' && !$('fld-singleItem').value ? '先選單堂付費的訂單' : '沒有符合的方案') + '</option>' +
+      list.map(function(p){ return '<option value="' + esc(p.name) + '" data-id="' + esc(p.id) + '">' + esc(planLabel(p)) + '</option>'; }).join('');
+    var idx = -1;
+    Array.prototype.forEach.call(sel.options, function(o, i){ if (keep && o.dataset.id === keep) idx = i; });
+    // 只有一個就預選；合併預選開始日最早的舊方案、最晚的新方案
+    if (idx < 0 && list.length && (list.length === 1 || f.pick === 'mergeOld' || f.pick === 'mergeNew')) idx = 1;
+    sel.selectedIndex = idx < 0 ? 0 : idx;
+    var now = sel.options[sel.selectedIndex] && sel.options[sel.selectedIndex].dataset.id;
+    if ((now || '') !== (keep || '')) sel.dispatchEvent(new Event('change')); // 預選或清掉時通知其他計算（活動升級、合併）
+    else after(f);
+    return list.length;
+  };
+  var fillAll = function(){
+    var counts = fields.map(function(f){ return fill(f); });
+    if (!plans) return;
+    var bad = (t === 'UPGRADE' && !campaignId()) || (t === 'TRIAL_DISCOUNT' && !$('fld-singleItem').value) ? false :
+      t === 'EXTEND_ADDON' ? counts.some(function(n){ return !n; }) : !counts[0];
+    info.innerHTML = bad ? '<span style="color:#b91c1c">⛔ ' + esc(PLAN_PICK_EMPTY[t] || '沒有符合的方案') + '</span>' : '';
+    if (bad) flash(PLAN_PICK_EMPTY[t] || '沒有符合的方案', false);
+  };
+  fields.forEach(function(f){
+    $('fld-' + f.key).addEventListener('change', function(){
+      after(f);
+      if (f.key === 'contract') fields.forEach(function(g){ if (g.pick === 'mergeNew' || (t === 'EXTEND_ADDON' && g.pick === 'pt')) fill(g); });
+    });
+  });
+  if ($('fld-campaign')) $('fld-campaign').addEventListener('change', fillAll);
+  if ($('fld-singleOrder')) $('fld-singleOrder').addEventListener('change', fillAll); // 單堂體驗折價：選了訂單才知道要列哪一類方案
+  var load = function(){
+    var el = $('fld-member'), m = el.value.trim();
+    if (m && m === loaded) return;
+    if (m && el.dataset.picked !== m) return;
+    loaded = m; var my = ++seq; plans = null; info.innerHTML = '';
+    if (!m) { fillAll(); return; }
+    fillAll(); info.textContent = '到 17Fit 讀取這位會員的方案…';
+    memberPlansCached(m).then(function(r){
+      if (my !== seq) return;
+      if (!r.found) { loaded = null; info.innerHTML = '⚠ 17Fit 找不到「' + esc(m) + '」。'; return; }
+      plans = r.plans;
+      info.innerHTML = '';
+      fillAll();
+      if (r.multiple) info.innerHTML += '<br>⚠ 17Fit 有多位同名會員，下面是全部的方案，請確認。';
+    }).catch(function(e){ if (my === seq) { loaded = null; info.textContent = '讀取 17Fit 方案失敗：' + (e && e.message || e); } });
+  };
+  $('fld-member').addEventListener('change', load);
+  $('fld-member').addEventListener('input', function(){ if ($('fld-member').value.trim() !== loaded) { loaded = null; seq++; plans = null; info.innerHTML = ''; fillAll(); } });
+  fillAll();
+}
+/**
+ * 轉讓（2026-11-23 業主）：列出轉讓人所有有效方案與剩餘堂數，勾「轉出」；勾選結果寫進隱藏欄位 contract/qty、contract2/qty2…，
+ * 轉讓後轉讓人還有沒有其他有效方案由系統依勾選判斷，判斷結果和 17Fit 做法顯示在最下方的提醒文字。
+ */
+/**
+ * 提前銷假：2026-11-24 業主改成先列出可以銷假的請假申請（已核准、請假期間還沒結束、還沒銷假的），選了自動帶入會員；
+ * 再填銷假日，系統算出新的暫停結束日與新到期日（送出時伺服器依原申請重算，這裡只是先顯示）。
+ */
+function setupLeaveEnd(){
+  var sel = $('fld-leaveReq'), list = [];
+  var info = document.createElement('div'); info.className = 'hint';
+  sel.parentNode.insertBefore(info, sel.nextSibling);
+  var ymd = function(s, n){ var p = String(s).split('-'); if (p.length !== 3) return ''; return new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]) + n * 86400000).toISOString().slice(0, 10); };
+  var calc = function(){
+    var l = list.filter(function(x){ return x.id === sel.value; })[0], rd = $('fld-returnDate').value;
+    ['member', 'contract', 'contractId', 'leaveStart', 'leaveEnd', 'oldEnd', 'pauseEnd', 'newEnd'].forEach(function(k){ $('fld-' + k).value = ''; });
+    info.textContent = '';
+    if (!l) return;
+    $('fld-member').value = l.member;
+    $('fld-contract').value = l.contract; $('fld-contractId').value = l.contractId; $('fld-leaveStart').value = l.leaveStart; $('fld-leaveEnd').value = l.leaveEnd; $('fld-oldEnd').value = l.oldEnd;
+    if (!rd) { info.textContent = '請假期間 ' + l.leaveStart + '～' + l.leaveEnd + '，請填銷假日（這天起恢復上課）。'; return; }
+    if (rd <= l.leaveStart || rd > l.leaveEnd) { info.innerHTML = '<span style="color:#b91c1c">⛔ 銷假日要在 ' + ymd(l.leaveStart, 1) + '～' + l.leaveEnd + ' 之間</span>'; return; }
+    var pe = ymd(rd, -1), days = Math.round((Date.parse(l.leaveEnd) - Date.parse(pe)) / 86400000);
+    $('fld-pauseEnd').value = pe; $('fld-newEnd').value = ymd(l.oldEnd, -days);
+    info.innerHTML = '提早 ' + days + ' 天恢復。17Fit：暫停期間改成 <b>' + l.leaveStart + '～' + pe + '</b>，到期日 ' + l.oldEnd + ' → <b>' + ymd(l.oldEnd, -days) + '</b>（原因欄寫編號）。';
+  };
+  calc();
+  call('openLeaves', S.token).then(function(r){
+    list = r || [];
+    if (!list.length) {
+      sel.innerHTML = '<option value="">目前沒有可以提前銷假的請假申請</option>';
+      info.innerHTML = '<span style="color:#b91c1c">⛔ 目前沒有可以提前銷假的請假申請（要先有已核准、請假期間還沒結束、還沒銷假的展延(請假)）</span>';
+      return;
+    }
+    sel.innerHTML = '<option value="">請選擇（共 ' + list.length + ' 筆）</option>' + list.map(function(l){
+      return '<option value="' + esc(l.id) + '">' + esc(l.id + '｜' + l.member + (l.branch ? '｜' + l.branch : '') + '｜' + l.contract + '｜請假 ' + l.leaveStart + '～' + l.leaveEnd) + '</option>'; }).join('');
+    if (list.length === 1) sel.selectedIndex = 1;
+    calc();
+  }).catch(function(e){ sel.innerHTML = '<option value="">讀取失敗</option>'; info.textContent = '讀取請假申請失敗：' + (e && e.message || e); });
+  sel.addEventListener('change', calc);
+  $('fld-returnDate').addEventListener('change', calc); $('fld-returnDate').addEventListener('input', calc);
+}
+function setupTransferPick(){
+  var box = $('fld-transferPick'), plans = null, seq = 0, loaded = null;
+  var tip = document.createElement('div'); tip.className = 'hint';
+  $('fld-note').parentNode.insertBefore(tip, $('fld-note').nextSibling);
+  var max = 20;
+  var sync = function(){
+    var checked = [], rest = [];
+    (plans || []).forEach(function(p, i){
+      var cb = box.querySelector('input[data-i="' + i + '"]');
+      if (cb && cb.checked) checked.push(p); else if (p.remaining === '' || Number(p.remaining) > 0) rest.push(p);
+    });
+    for (var n = 1; n <= max; n++) {
+      var p = checked[n - 1], sfx = n === 1 ? '' : String(n);
+      $('fld-contract' + sfx).value = p ? p.name : '';
+      $('fld-qty' + sfx).value = p ? p.remaining : '';
+    }
+    $('fld-contractId').value = checked.map(function(p){ return p.id; }).join(',');
+    if ($('fld-contractEnds')) $('fld-contractEnds').value = checked.map(function(p){ return p.end || ''; }).join(',');
+    $('fld-remainPlans').value = !plans || !checked.length ? '' : rest.length ? '還有其他方案' : '沒有剩餘方案';
+    var html = '<b>提醒：</b>受讓人如果是<b>新學員</b>，要先在 17Fit 新增客戶（姓名＋卡號），櫃台<b>收帳戶設定費</b>，再回來在受讓人欄點選他。<br>' +
+      '17Fit：受讓人結帳 0 元購買同款方案並調成轉讓堂數；轉讓人轉出的方案<b>「場館扣除」剩餘堂數到 0</b>（原因欄寫編號；不要按「取消資格」，會把尚未上的預約一起取消）。';
+    if (checked.length) html += '<br>轉出 ' + checked.length + ' 個方案：' + checked.map(function(p){ return esc(p.name) + ' ' + esc(p.remaining) + ' 堂'; }).join('、') + '。' +
+      (rest.length ? '<br>轉讓人還有其他有效方案（' + rest.map(function(p){ return esc(p.name); }).join('、') + '）：帳號名稱不用改，日後再買方案也不用重繳帳戶設定費。'
+        : '<br><b>轉讓後轉讓人沒有剩餘方案</b>：帳號名稱後面要加註<b>「(已轉讓)」</b>（下方取消勾選就不加註），日後再買方案要重繳帳戶設定費。');
+    tip.innerHTML = html;
+  };
+  var render = function(){
+    if (!plans) { sync(); return; }
+    if (!plans.length) { box.innerHTML = '⛔ 轉讓人目前沒有有效方案，不能轉讓。'; sync(); return; }
+    box.innerHTML = '<table style="width:100%;border-collapse:collapse"><tr><th style="text-align:left">方案</th><th>剩餘</th><th>轉出</th></tr>' +
+      plans.map(function(p, i){
+        var can = p.remaining !== '' && Number(p.remaining) > 0;
+        return '<tr style="border-top:1px solid #e5e7eb"><td>' + esc(p.name) +
+          '<div class="muted" style="font-size:12px">' + esc((p.start ? p.start + ' 起' : '') + (p.end ? '｜到 ' + p.end : '｜無期限') + (p.paused ? '｜暫停中' : '')) + '</div></td>' +
+          '<td style="text-align:center">' + (p.remaining === '' ? '－' : esc(p.remaining) + ' 堂') + '</td>' +
+          '<td style="text-align:center"><input type="checkbox" data-i="' + i + '" style="width:auto"' + (can ? '' : ' disabled title="沒有剩餘堂數"') + '></td></tr>';
+      }).join('') + '</table>';
+    Array.prototype.forEach.call(box.querySelectorAll('input[type=checkbox]'), function(cb){ cb.addEventListener('change', sync); });
+    sync();
+  };
+  var load = function(){
+    var el = $('fld-member'), m = el.value.trim();
+    if (m && m === loaded) return;
+    if (m && el.dataset.picked !== m) return;
+    loaded = m; var my = ++seq; plans = null;
+    if (!m) { box.textContent = '先選轉讓人'; render(); return; }
+    box.textContent = '到 17Fit 讀取轉讓人的方案…'; render();
+    memberPlansCached(m).then(function(r){
+      if (my !== seq) return;
+      if (!r.found) { loaded = null; box.textContent = '⚠ 17Fit 找不到「' + m + '」。'; return; }
+      plans = r.plans; render();
+    }).catch(function(e){ if (my === seq) { loaded = null; box.textContent = '讀取 17Fit 方案失敗：' + (e && e.message || e); } });
+  };
+  $('fld-member').addEventListener('change', load);
+  $('fld-member').addEventListener('input', function(){ if ($('fld-member').value.trim() !== loaded) { loaded = null; seq++; plans = null; box.textContent = '先選轉讓人'; render(); } });
+  render();
+}
+/** 學員名單（Members.js memberIndex）：登入後只讀一次，存在 S.memberIndex */
+function loadMemberIndex(){
+  if (S.memberIndex || S.memberIndexLoading) return;
+  S.memberIndexLoading = true;
+  call('memberIndex', S.token).then(function(r){ S.memberIndex = r.names || []; })
+    .catch(function(){ S.memberIndex = null; }).finally(function(){ S.memberIndexLoading = false; });
+}
+/** 名單篩選：忽略空白、大小寫，名稱包含輸入的字（和 Members.js fmFilter_ 相同） */
+/** 17Fit 帳號名稱只留姓名（去掉卡號、括號加註），例如「林筠A6122(已轉讓)」→「林筠」 */
+function memberNameOnly(s){ return String(s || '').replace(/[(（][^)）]*[)）]/g, '').replace(/[A-Za-z]\d+\s*$/, '').replace(/\s+/g, ''); }
+function filterMembers(names, q, limit){
+  var k = String(q || '').replace(/\s+/g, '').toLowerCase(), out = [];
+  if (!k) return out;
+  for (var i = 0; i < names.length && out.length < limit; i++) {
+    if (String(names[i]).replace(/\s+/g, '').toLowerCase().indexOf(k) >= 0) out.push(names[i]);
+  }
+  return out;
+}
+/** 同一位學員的方案只讀一次（方案欄、888 成交方案共用） */
+function memberPlansCached(m){
+  S.mpCache = S.mpCache || {};
+  if (!S.mpCache[m]) S.mpCache[m] = call('memberPlans', S.token, m).catch(function(e){ delete S.mpCache[m]; throw e; });
+  return S.mpCache[m];
+}
+function setupMemberPlans(def){
+  var fields = def.fields.filter(function(f){ return f.ofMember && $('fld-' + f.key); });
+  if (!fields.length || !$('fld-member')) return;
+  var dl = $('dl-mp');
+  if (!dl) { dl = document.createElement('datalist'); dl.id = 'dl-mp'; document.body.appendChild(dl); }
+  dl.innerHTML = '';
+  var info = document.createElement('div'); info.className = 'hint';
+  var anchor = $('dl-fld-member') || $('fld-member');
+  anchor.parentNode.insertBefore(info, anchor.nextSibling);
+  var warn = document.createElement('div'); warn.className = 'hint'; warn.style.color = '#b45309';
+  var seq = 0, plans = null;
+  // 一般贈課：只有目前贈課來源用得到、而且要列這位學員方案的欄位才查（生日好禮、Google好評不用查；BR轉介的成交方案是新客戶的）
+  var active = function(){
+    var src = $('fld-source') ? $('fld-source').value : '';
+    return fields.filter(function(f){ return (!f.sources || f.sources.indexOf(src) >= 0) && !(f.noMemberPlanFor && f.noMemberPlanFor.indexOf(src) >= 0); });
+  };
+  var setList = function(id){
+    var src = $('fld-source') ? $('fld-source').value : '';
+    fields.forEach(function(f){
+      if (f.noMemberPlanFor && f.noMemberPlanFor.indexOf(src) >= 0) return; // 例：BR轉介的成交方案列新客戶的方案（另外處理）
+      $('fld-' + f.key).setAttribute('list', active().indexOf(f) >= 0 ? id : 'dl-contracts');
+    });
+  };
+  var label = function(p){
+    return (p.remaining !== '' ? '剩 ' + p.remaining + ' 堂' : '') + (p.end ? '｜到 ' + p.end : '｜無期限') + (p.paused ? '｜暫停中' : '');
+  };
+  var tp = $('f-type').value;
+  // 取消預約 B、D 類：這個方案是重新預約正確課程要用的，只能是團課方案（正確課程再依這個方案能約的課列出）
+  var rebook = function(){ return tp === 'CANCEL_BOOKING' && /^[BD]/.test($('fld-category').value); };
+  var planOk = function(p){ return !rebook() || p.isGroup; };
+  var check = function(el){
+    if (!plans || !el.value.trim() || !active().some(function(f){ return 'fld-' + f.key === el.id; })) { warn.textContent = ''; return; }
+    var hit = plans.filter(planOk).filter(function(p){ return p.name === el.value.trim(); });
+    warn.textContent = hit.length ? '' : tp === 'CANCEL_BOOKING' && plans.some(function(p){ return p.name === el.value.trim(); }) ?
+      '⚠「' + el.value.trim() + '」不是團課方案，B、D 類重新預約只能用團課方案，請從清單選擇。' :
+      '⚠「' + el.value.trim() + '」不是這位學員目前的有效方案，請從清單選擇。';
+    el.parentNode.insertBefore(warn, el.nextSibling);
+    var oe = $('fld-oldEnd');
+    if (hit.length && el.id === 'fld-contract' && oe && !oe.readOnly && hit[0].end) {
+      oe.value = hit[0].end;
+      oe.dispatchEvent(new Event('input')); oe.dispatchEvent(new Event('change'));
+    }
+  };
+  fields.forEach(function(f){ $('fld-' + f.key).addEventListener('change', function(e){ check(e.target); }); });
+  var loaded = null, lastR = null;
+  var show = function(){
+    var r = lastR, list = plans.filter(planOk);
+    dl.innerHTML = list.map(function(p){ return '<option value="' + esc(p.name) + '" label="' + esc(label(p)) + '">'; }).join('');
+    setList('dl-mp');
+    info.innerHTML = (r.multiple ? '⚠ 17Fit 有多位同名學員，下面是全部的方案，請確認。<br>' : '') +
+      (list.length ? (list.length < plans.length ? '這位學員可以用來重新預約的團課方案（方案欄可直接點選）：<br>' : '這位學員目前的有效方案（方案欄可直接點選）：<br>') + list.map(function(p){
+        return '・' + esc(p.name) + '（' + esc(label(p).replace(/^｜/, '')) + (p.start ? '，' + esc(p.start) + ' 起' : '') + '）';
+      }).join('<br>') : plans.length ? '這位學員沒有團課方案，不能重新預約。' : '這位學員目前沒有有效方案。');
+    if (rebook() && list.length === 1 && !$('fld-contract').value.trim()) {
+      $('fld-contract').value = list[0].name; $('fld-contract').dispatchEvent(new Event('change'));
+    }
+    fields.forEach(function(f){ if ($('fld-' + f.key).value) check($('fld-' + f.key)); });
+  };
+  var load = function(){
+    var m = $('fld-member').value.trim();
+    if (m && m === loaded) return; // 點選學員和離開欄位都會觸發 change，同一位不重讀
+    // 只打了部分姓名就離開欄位：還沒選定學員，不去查（等經理從候選名單點選）
+    if (m && $('fld-member').dataset.picked !== m) return;
+    if (!active().length) { loaded = null; seq++; plans = null; warn.textContent = ''; dl.innerHTML = ''; info.innerHTML = ''; setList('dl-contracts'); return; }
+    loaded = m;
+    var my = ++seq;
+    plans = null; warn.textContent = ''; dl.innerHTML = '';
+    if (!m) { info.innerHTML = ''; setList('dl-contracts'); return; }
+    info.textContent = '到 17Fit 讀取這位學員的方案…';
+    memberPlansCached(m).then(function(r){
+      if (my !== seq) return;
+      if (!r.found) { loaded = null; info.innerHTML = '⚠ 17Fit 找不到「' + esc(m) + '」，請確認學員名稱要和 17Fit 完全相同。'; setList('dl-contracts'); return; }
+      plans = r.plans; lastR = r; show();
+    }).catch(function(e){
+      if (my !== seq) return;
+      loaded = null;
+      info.textContent = '讀取 17Fit 方案失敗：' + (e && e.message || e) + '（可以照舊從全部方案清單選）';
+      setList('dl-contracts');
+    });
+  };
+  $('fld-member').addEventListener('change', load);
+  if ($('fld-source')) $('fld-source').addEventListener('change', function(){ loaded = null; load(); });
+  // 取消預約：換類別時重新篩選扣課方案
+  if (tp === 'CANCEL_BOOKING') $('fld-category').addEventListener('change', function(){ if (plans) show(); });
+  // 開始改打學員名稱：前一位的方案清單馬上收起來（不要等到點候選按鈕時才收，畫面會跳動點錯）
+  $('fld-member').addEventListener('input', function(){
+    if ($('fld-member').value.trim() === loaded) return;
+    loaded = null; seq++; plans = null; info.innerHTML = ''; warn.textContent = ''; dl.innerHTML = ''; setList('dl-contracts');
+  });
+}
+function renderFields(){
+  S.mpCache = {}; S.tdCache = {}; // 換表單就重新到 17Fit 讀（剛買的方案才看得到）
+  var def = S.boot.types[$('f-type').value];
+  // 2026-11-23 業主：只有展延(請假)要附件（請假證明，必附），其他類別不顯示附件欄
+  $('f-attach').style.display = def && def.attachRequired ? '' : 'none';
+  if (!(def && def.attachRequired)) { S.files = []; $('f-files').value = ''; $('f-thumbs').innerHTML = ''; }
+  $('f-hint').innerHTML = $('f-type').value === 'BR_REFERRAL' ?
+    '轉介通知不需要在 17Fit 操作。新客成交後送「一般贈課」（來源選 BR轉介）時，<b>要引用這筆轉介通知的編號</b>；BR 只贈介紹人，同一筆轉介只能贈送一次。' :
+    def.idHint ?
+    '送出後會產生編號（例如 R2611-015）。在 17Fit 操作時，請在<b>' + esc(def.idHint) + '</b>開頭寫上這個編號，系統才能自動比對。' :
+    '送出後會產生編號。這類操作在 17Fit 沒有備註欄，不用寫編號，系統會用會員、時間和內容自動比對。';
+  $('f-fields').innerHTML = def.fields.map(function(f){
+    var id = 'fld-' + f.key, req = f.required ? '<span class="req">*</span>' : '';
+    var input;
+    if (f.type === 'hidden') return '<input id="' + id + '" type="hidden">';
+    if (f.type === 'check') return '<label style="display:flex;gap:8px;align-items:center;font-weight:normal"><input id="' + id + '" type="checkbox" checked style="width:auto;margin:0">' + esc(f.label) + '</label>';
+    if (f.type === 'select') input = '<select id="' + id + '"><option value="">請選擇</option>' + f.options.map(function(o){ return '<option>' + esc(o) + '</option>'; }).join('') + '</select>';
+    else if (f.type === 'textarea') input = '<textarea id="' + id + '"' + (f.readOnly ? ' readonly rows="6" style="background:#f8fafc"' : '') + ' placeholder="' + esc(f.calc ? '選好會員和方案後，系統會到 17Fit 查資料自動計算' : (f.placeholder || '')) + '"></textarea>';
+    else if (f.type === 'number') input = '<input id="' + id + '" type="number" inputmode="decimal"' + (f.min != null ? ' min="' + f.min + '"' : '') + '>';
+    else if (f.type === 'date') input = '<input id="' + id + '" type="date">';
+    else if (f.type === 'datetime') input = '<input id="' + id + '" type="datetime-local">';
+    else if (f.type === 'contract') input = '<input id="' + id + '" list="dl-contracts" placeholder="從清單選擇方案名稱">';
+    else if (f.type === 'plan888') input = '<select id="' + id + '"></select>';
+    else if (f.type === 'planPick') input = '<select id="' + id + '"><option value="">先選會員</option></select>';
+    else if (f.type === 'leavePick') input = '<select id="' + id + '"><option value="">讀取請假申請中…</option></select>';
+    else if (f.type === 'planChecks') input = '<div id="' + id + '" class="hint">先選轉讓人</div>';
+    else if (f.type === 'trialOrder') input = '<select id="' + id + '"><option value="">先選會員</option></select>';
+    else if (f.type === 'classPick') input = '<select id="' + id + '"><option value="">先選日期和分店</option></select>';
+    else if (f.type === 'referral') input = '<select id="' + id + '" data-req="' + (f.required ? '1' : '') + '"></select>';
+    else if (f.type === 'member') input = '<input id="' + id + '" list="dl-' + id + '" placeholder="輸入姓名或卡號的一部分，再從清單點選"><datalist id="dl-' + id + '"></datalist>';
+    else input = '<input id="' + id + '" placeholder="' + esc(f.placeholder || '') + '">';
+    if (f.readOnly) input = input.replace('<input ', '<input readonly ');
+    // 只在某些來源出現的欄位（一般贈課）：依贈課來源顯示／隱藏；reqFor 的來源顯示必填記號
+    if (f.sources) return '<div class="fsrc" data-sources="' + esc(f.sources.join('|')) + '" data-reqfor="' + esc((f.reqFor || []).join('|')) + '" style="display:none">' +
+      '<label>' + esc(f.label) + '<span class="req" style="display:none">*</span></label>' + input + '</div>';
+    // 轉讓的第 2 個以後的方案：按「再加一個轉讓方案」才顯示
+    if (f.more) return '<div class="fmore" data-more="' + f.more + '" style="display:none"><label>' + esc(f.label) + '</label>' + input + '</div>';
+    return '<label>' + esc(f.label) + req + '</label>' + input;
+  }).join('');
+  var mores = document.querySelectorAll('#f-fields .fmore');
+  if (mores.length) {
+    var moreShown = 1, moreMax = 0;
+    Array.prototype.forEach.call(mores, function(d){ moreMax = Math.max(moreMax, +d.dataset.more); });
+    var moreBtn = document.createElement('button');
+    moreBtn.type = 'button'; moreBtn.className = 'btn sec'; moreBtn.textContent = '＋ 再加一個轉讓方案';
+    mores[mores.length - 1].parentNode.insertBefore(moreBtn, mores[mores.length - 1].nextSibling);
+    moreBtn.onclick = function(){
+      moreShown++;
+      Array.prototype.forEach.call(mores, function(d){ if (+d.dataset.more === moreShown) d.style.display = ''; });
+      if (moreShown >= moreMax) moreBtn.style.display = 'none';
+    };
+  }
+  if ($('fld-source') && document.querySelector('#f-fields .fsrc')) {
+    var srcShow = function(){
+      var v = $('fld-source').value;
+      Array.prototype.forEach.call(document.querySelectorAll('#f-fields .fsrc'), function(d){
+        d.style.display = d.dataset.sources.split('|').indexOf(v) >= 0 ? '' : 'none';
+        d.querySelector('.req').style.display = d.dataset.reqfor.split('|').indexOf(v) >= 0 ? '' : 'none';
+      });
+    };
+    srcShow();
+    $('fld-source').addEventListener('change', srcShow);
+  }
+  def.fields.forEach(function(f){
+    if (f.type === 'member') {
+      // 輸入姓名或卡號的一部分 → 到 17Fit 搜尋候選學員 → 點選（2026-11-23 業主：不用打完整名稱）
+      // 候選學員直接列成可點的按鈕（瀏覽器內建的下拉建議在手機、部分瀏覽器不好點）；點了才算選定（data-picked）
+      var el = $('fld-' + f.key), timer, seq = 0;
+      el.removeAttribute('list');
+      var msg = document.createElement('div'); msg.className = 'hint';
+      var picks = document.createElement('div'); picks.className = 'picks';
+      var dlm = $('dl-fld-' + f.key);
+      dlm.parentNode.insertBefore(picks, dlm.nextSibling);
+      dlm.parentNode.insertBefore(msg, dlm.nextSibling);
+      var choose = function(name){
+        el.value = name; el.dataset.picked = name;
+        picks.innerHTML = ''; msg.textContent = '';
+        el.dispatchEvent(new Event('change'));
+      };
+      var show = function(list, q, auto){
+        if (list.indexOf(q) >= 0 && list.length === 1) { choose(q); return; } // 打的就是完整名稱
+        if (auto) {
+          // 2026-11-24 業主：轉介通知只有姓名，和 17Fit 帳號名稱不一樣：只有一位同名就直接用這個帳號，同名多位要經理點選
+          var same = list.filter(function(n){ return memberNameOnly(n) === memberNameOnly(q); });
+          if (same.length === 1) { choose(same[0]); return; }
+          if (same.length > 1) list = same;
+        }
+        picks.innerHTML = list.map(function(n){ return '<button type="button" class="pick" data-name="' + esc(n) + '">' + esc(n) + '</button>'; }).join('');
+        Array.prototype.forEach.call(picks.querySelectorAll('.pick'), function(b){
+          // 按下時不讓學員欄失去焦點：避免先觸發 change、畫面跳動，點到別的地方
+          b.onmousedown = function(e){ e.preventDefault(); };
+          b.onclick = function(){ choose(b.dataset.name); };
+        });
+        msg.textContent = !list.length ? '17Fit 找不到符合「' + q + '」的學員，請換個字或用卡號找。' :
+          auto ? '17Fit 有 ' + list.length + ' 位' + (list.every(function(n){ return memberNameOnly(n) === memberNameOnly(q); }) ? '同名的「' + q + '」' : '名稱包含「' + q + '」的學員') + '，請點選正確的帳號：' :
+          '找到 ' + list.length + ' 位' + (list.length >= 25 ? '以上，請多打幾個字縮小範圍' : '') + '，請點選學員：';
+      };
+      // 學員名單（每天凌晨下載）：登入後讀一次，打字時在網頁裡即時篩選
+      loadMemberIndex();
+      el.addEventListener('input', function(){
+        clearTimeout(timer);
+        el.dataset.picked = '';
+        var auto = el.dataset.auto === '1'; el.dataset.auto = ''; // 系統帶入的姓名（不是經理打的字）
+        var q = el.value.trim(), my = ++seq;
+        if (!q) { msg.textContent = ''; picks.innerHTML = ''; return; }
+        var local = S.memberIndex && S.memberIndex.length ? filterMembers(S.memberIndex, q, 25) : null;
+        if (local && local.length) { timer = setTimeout(function(){ if (my === seq) show(local, q, auto); }, 120); return; }
+        // 名單裡沒有（例如今天才建立的學員）或名單還沒讀到：即時到 17Fit 搜尋
+        timer = setTimeout(function(){
+          if (my !== seq) return;
+          msg.textContent = '到 17Fit 搜尋「' + q + '」…';
+          call('searchMembers', S.token, q).then(function(list){ if (my === seq) show(list, q, auto); })
+            .catch(function(e){ if (my === seq) msg.textContent = '搜尋失敗：' + (e && e.message || e); });
+        }, 400);
+      });
+    }
+  });
+  setupMemberPlans(def);
+  if ($('f-type').value === 'TRIAL_DISCOUNT') setupTrialOrders(); // 要在 setupPlanPick 前面（選訂單時先帶入品項，方案清單再依品項篩選）
+  setupPlanPick(def);
+  if ($('f-type').value === 'TRANSFER') setupTransferPick();
+  if ($('f-type').value === 'LEAVE_END') setupLeaveEnd();
+  if ($('f-type').value === 'CANCEL_BOOKING') { setupBookings(); setupClassPick(); }
+  // 2026-11-24 業主：折抵的新方案不能是 0 元贈送、單堂付費、體驗方案
+  if ($('f-type').value === 'OFFSET' && $('fld-newContract')) {
+    var dlo = $('dl-offset-new');
+    if (!dlo) { dlo = document.createElement('datalist'); dlo.id = 'dl-offset-new'; document.body.appendChild(dlo); }
+    dlo.innerHTML = (S.boot.contracts || []).filter(function(c){ return !/贈課|贈送|單堂|體驗/.test(c); }).map(function(c){ return '<option value="' + esc(c) + '">'; }).join('');
+    $('fld-newContract').setAttribute('list', 'dl-offset-new');
+  }
+  // 自動計算
+  var t = $('f-type').value;
+  if (t === 'EXTEND') {
+    // 2026-11-23 業主：展延對象就是介紹人（不用選）；新到期日預設原到期日後 30 天（可改）
+    $('fld-source').value = 'BR轉介';
+    // 2026-11-24 業主：新到期日固定＝原到期日＋30 天，不能改
+    var brEnd = function(){
+      var p = String($('fld-oldEnd').value).split('-');
+      $('fld-newEnd').value = p.length !== 3 ? '' : new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]) + (S.boot.brExtendDays || 30) * 86400000).toISOString().slice(0, 10);
+    };
+    $('fld-oldEnd').addEventListener('input', brEnd); $('fld-oldEnd').addEventListener('change', brEnd);
+  }
+  if (t === 'GIFT' || t === 'EXTEND') {
+    // 轉介通知下拉選單：已被引用過的不列出（介紹人、新客各只能贈送一次，贈課或展延擇一）。
+    // 選了贈課來源／展延對象時，只列出那一方還沒贈送過的；還沒選時，兩方都用過的才拿掉。
+    var refOptions = function(){
+      var sel = $('fld-referral'), keep = sel.value, src = $('fld-source').value;
+      // 2026-11-21 業主：BR 只贈介紹人，已被引用過（贈課或展延）的轉介通知不再列出
+      var open = S.boot.referrals.filter(function(r){ return !r.giftedReferrer; });
+      sel.innerHTML = '<option value="">請選擇</option>' +
+        open.map(function(r){
+          return '<option value="' + esc(r.id) + '">' + esc(r.id + '｜' + r.createdAt + '｜' + r.branch + '｜' + r.member + ' → ' + r.newName) + '</option>';
+        }).join('') +
+        '<option value="' + esc(S.boot.referralLegacy) + '">系統上線前已在 LINE 報備（請在補充說明寫日期）</option>';
+      sel.value = keep;
+      if (sel.value !== keep) sel.value = '';
+    };
+    refOptions();
+    $('fld-source').addEventListener('change', refOptions);
+    // 選了轉介通知：依贈課來源／展延對象自動帶入會員／相關會員
+    var fill = function(){
+      var ref = S.boot.referrals.filter(function(r){ return r.id === $('fld-referral').value; })[0];
+      if (!ref) return;
+      var src = $('fld-source').value;
+      if (src === 'BR轉介') { if ($('fld-member').value.trim() !== ref.member || $('fld-member').dataset.picked !== ref.member) { $('fld-member').value = ref.member; $('fld-member').dataset.picked = ref.member; $('fld-member').dispatchEvent(new Event('change')); }
+        var rm = $('fld-relatedMember');
+        if (memberNameOnly(rm.value) !== memberNameOnly(ref.newName) || !rm.dataset.picked) { rm.value = ref.newName; rm.dataset.auto = '1'; rm.dispatchEvent(new Event('input')); dealLoad(); }
+      }
+    };
+    $('fld-referral').addEventListener('change', fill);
+    $('fld-source').addEventListener('change', fill);
+    // 2026-11-24 業主：成交的正式方案一定是新客戶的方案 → 到 17Fit 讀新客戶的方案當選項（0 元贈送的不列）；沒有就提示
+    var dealDl = $('dl-deal');
+    if (!dealDl) { dealDl = document.createElement('datalist'); dealDl.id = 'dl-deal'; document.body.appendChild(dealDl); }
+    var dealMsg = document.createElement('div'); dealMsg.className = 'hint';
+    $('fld-dealContract').parentNode.insertBefore(dealMsg, $('fld-dealContract').nextSibling);
+    var dealSeq = 0, dealList = null;
+    var isBr = function(){ return t === 'EXTEND' || $('fld-source').value === 'BR轉介'; };
+    var dealCheck = function(){
+      var el = $('fld-dealContract'), v = el.value.trim(), w = $('deal-warn');
+      if (w) w.remove();
+      if (!isBr() || !dealList || !v || dealList.some(function(p){ return p.name === v; })) return;
+      w = document.createElement('div'); w.id = 'deal-warn'; w.className = 'hint'; w.style.color = '#b45309';
+      w.textContent = '⚠「' + v + '」不是新客戶在 17Fit 的方案，請從清單選擇。';
+      dealMsg.parentNode.insertBefore(w, dealMsg.nextSibling);
+    };
+    var dealLoad = function(){
+      var el = $('fld-dealContract'), n = $('fld-relatedMember').value.trim(), my = ++dealSeq;
+      dealList = null; dealDl.innerHTML = '';
+      if (!isBr()) { dealMsg.textContent = ''; dealCheck(); return; }
+      el.setAttribute('list', 'dl-deal');
+      if (!n) { dealMsg.textContent = '先選新客戶（引用轉介通知時自動帶入），系統會列出新客戶在 17Fit 的方案。'; dealCheck(); return; }
+      if ($('fld-relatedMember').dataset.picked !== n) { dealMsg.textContent = '新客戶要先確定 17Fit 帳號（在新客戶欄點選），系統才會列出他的方案。'; dealCheck(); return; }
+      dealMsg.textContent = '到 17Fit 讀取新客戶「' + n + '」的方案…';
+      memberPlansCached(n).then(function(r){
+        if (my !== dealSeq) return;
+        if (!r.found) { dealMsg.innerHTML = '⚠ 17Fit 找不到新客戶「' + esc(n) + '」，請在新客戶欄輸入姓名或卡號，從清單點選。'; return; }
+        dealList = r.plans.filter(function(p){ return !p.isGift; });
+        if (!dealList.length) { dealMsg.innerHTML = '<span style="color:#b91c1c">⛔ 沒有成交的正式方案</span>（新客戶「' + esc(n) + '」在 17Fit 沒有方案，請確認新客戶已經結帳）'; el.value = ''; dealCheck(); return; }
+        dealDl.innerHTML = dealList.map(function(p){ return '<option value="' + esc(p.name) + '" label="' + esc((p.start ? p.start + ' 起' : '') + (p.end ? '｜到 ' + p.end : '｜無期限')) + '">'; }).join('');
+        dealMsg.innerHTML = '新客戶「' + esc(n) + '」在 17Fit 的方案（成交方案欄可直接點選）：' + dealList.map(function(p){ return esc(p.name); }).join('、');
+        if (dealList.length === 1 && !el.value.trim()) { el.value = dealList[0].name; el.dispatchEvent(new Event('change')); }
+        dealCheck();
+      }).catch(function(e){ if (my === dealSeq) dealMsg.textContent = '讀取新客戶方案失敗：' + (e && e.message || e); });
+    };
+    ['fld-relatedMember', 'fld-referral', 'fld-source'].forEach(function(id){ $(id).addEventListener('change', dealLoad); });
+    $('fld-dealContract').addEventListener('change', dealCheck);
+    dealLoad();
+  }
+  if (t === 'GIFT') {
+    // 888直購／銜接（2026-11-23 業主）：先選受贈會員，成交方案從他在 17FIT 的方案裡選；
+    // 只有贈課表裡有這種贈課的原價正式方案能選，選好後依贈課表帶出團課、教練課堂數（不能改）
+    var codeSel = $('fld-dealPlan'), mPlans = null, mpSeq = 0, mpMsg = document.createElement('div');
+    mpMsg.className = 'hint'; codeSel.parentNode.insertBefore(mpMsg, codeSel.nextSibling);
+    var gift888 = function(){
+      var src = $('fld-source').value, keep = codeSel.value, key = src === '888銜接' ? 'bridge' : 'direct';
+      if (src !== '888直購' && src !== '888銜接') return;
+      if (!mPlans) { codeSel.innerHTML = '<option value="">先選受贈會員</option>'; }
+      else {
+        var ok = function(p){ return p.code888 && S.boot.gift888[p.code888] && S.boot.gift888[p.code888][key]; };
+        var good = mPlans.filter(ok), other = mPlans.filter(function(p){ return !ok(p); });
+        codeSel.innerHTML = '<option value="">' + (good.length ? '請選擇' : '這位會員沒有可贈課的方案') + '</option>' +
+          good.map(function(p){ return '<option value="' + esc(p.name) + '">' + esc(p.name + (p.start ? '（' + p.start + ' 起）' : '')) + '</option>'; }).join('') +
+          other.map(function(p){ return '<option disabled>' + esc(p.name + '（不在 ' + src + ' 贈課表）') + '</option>'; }).join('');
+        codeSel.value = good.some(function(p){ return p.name === keep; }) ? keep : '';
+      }
+      var hit = mPlans && mPlans.filter(function(p){ return p.name === codeSel.value; })[0];
+      var g = hit ? S.boot.gift888[hit.code888][key] : null;
+      $('fld-giftGroup').value = g ? g[0] : '';
+      $('fld-giftPT').value = g ? g[1] : '';
+    };
+    var loadMp = function(){
+      var el = $('fld-member'), m = el.value.trim(), my = ++mpSeq;
+      mPlans = null; mpMsg.textContent = '';
+      var s8 = $('fld-source').value;
+      if (m && el.dataset.picked === m && (s8 === '888直購' || s8 === '888銜接')) {
+        mpMsg.textContent = '到 17Fit 讀取這位會員的方案…';
+        memberPlansCached(m).then(function(r){
+          if (my !== mpSeq) return;
+          mPlans = r.found ? r.plans : [];
+          mpMsg.textContent = r.found ? '' : '17Fit 找不到這位會員。';
+          gift888();
+        }).catch(function(e){ if (my === mpSeq) mpMsg.textContent = '讀取 17Fit 方案失敗：' + (e && e.message || e); });
+      }
+      gift888();
+    };
+    $('fld-member').addEventListener('change', loadMp);
+    $('fld-source').addEventListener('change', loadMp);
+    $('fld-member').addEventListener('input', function(){ if ($('fld-member').dataset.picked !== $('fld-member').value.trim()) { mPlans = null; mpSeq++; mpMsg.textContent = ''; gift888(); } });
+    $('fld-source').addEventListener('change', gift888);
+    codeSel.addEventListener('change', gift888);
+    gift888();
+    // 體驗折價（2026-11-23 業主）：單堂付費的購買日、實收金額預設帶入這位會員「先買的單堂付費」（結帳資料）
+    var tdAuto = { date: '', price: '' }, tdSeq = 0, tdMsg = document.createElement('div');
+    tdMsg.className = 'hint'; $('fld-singlePrice').parentNode.insertBefore(tdMsg, $('fld-singlePrice').nextSibling);
+    var tdFill = function(){
+      var el = $('fld-member'), m = el.value.trim(), item = $('fld-singleItem').value, my = ++tdSeq;
+      if ($('fld-source').value !== '體驗折價' || !m || el.dataset.picked !== m || !item) { tdMsg.textContent = ''; return; }
+      tdMsg.textContent = '查這位會員買過的單堂付費…';
+      S.tdCache = S.tdCache || {};
+      (S.tdCache[m] = S.tdCache[m] || call('memberSingles', S.token, m)).then(function(list){
+        if (my !== tdSeq) return;
+        var hit = list.filter(function(x){ return x.item === item; });
+        if (!hit.length) {
+          // 先前自動帶入的是別的品項：清掉，避免送出錯的金額
+          if ($('fld-singleDate').value === tdAuto.date) $('fld-singleDate').value = '';
+          if ($('fld-singlePrice').value === tdAuto.price) $('fld-singlePrice').value = '';
+          tdAuto = { date: '', price: '' };
+          tdMsg.textContent = '結帳資料找不到這位會員的「' + item + '」（今天才買的要明天才有），請自行填寫購買日和實收金額。'; return;
+        }
+        var h = hit[0];
+        if (!$('fld-singleDate').value || $('fld-singleDate').value === tdAuto.date) { $('fld-singleDate').value = h.date; tdAuto.date = h.date; }
+        if (!$('fld-singlePrice').value || $('fld-singlePrice').value === tdAuto.price) { $('fld-singlePrice').value = h.amount; tdAuto.price = String(h.amount); }
+        tdMsg.textContent = '已帶入 ' + h.date + ' 購買的「' + h.item + '」實收 ' + h.amount + ' 元' + (hit.length > 1 ? '（共買過 ' + hit.length + ' 次：' + hit.map(function(x){ return x.date + ' ' + x.amount + ' 元'; }).join('、') + '）' : '') + '。';
+      }).catch(function(e){ delete S.tdCache[m]; if (my === tdSeq) tdMsg.textContent = '查詢失敗：' + (e && e.message || e) + '（請自行填寫）'; });
+    };
+    ['fld-member', 'fld-singleItem', 'fld-source'].forEach(function(id){ $(id).addEventListener('change', tdFill); });
+    // 體驗折價：正式方案的 17FIT 方案編號（同名方案取最新開始的，就是剛成交的那個），機器人照編號扣 1 堂
+    var tdId = function(){
+      var el = $('fld-dealContractId'); if (!el) return; el.value = '';
+      var m = $('fld-member').value.trim(), n = $('fld-dealContract').value.trim();
+      if ($('fld-source').value !== '體驗折價' || !m || !n || $('fld-member').dataset.picked !== m) return;
+      memberPlansCached(m).then(function(r){
+        var hit = (r.plans || []).filter(function(p){ return p.name === n; }).sort(function(a, b){ return (a.start || '') < (b.start || '') ? 1 : -1; })[0];
+        if (hit && $('fld-dealContract').value.trim() === n) el.value = hit.id;
+      }).catch(function(){});
+    };
+    ['fld-member', 'fld-dealContract', 'fld-source'].forEach(function(id){ $(id).addEventListener('change', tdId); });
+    var giftHint = function(){
+      var src = $('fld-source').value, h = $('f-hint').dataset.base || $('f-hint').innerHTML;
+      $('f-hint').dataset.base = h;
+      var extra = src === '體驗折價' ? '<br>體驗折價在 17Fit 要做兩件事：結帳時正式方案<b>折扣＝單堂付費的實收金額</b>，並對正式方案<b>「場館扣除」1 堂</b>（原因欄寫編號）。' :
+        (src === '888直購' || src === '888銜接') ? '<br>17Fit 做法：幫會員<b>購買 0 元的「888直購/銜接贈課 N堂團體課」</b>（有贈教練課的再買「888直購/銜接贈課 N堂私人教練課」），堂數照上面帶出的贈送堂數，訂單備註寫編號，<b>不要用場館給予</b>。888直購＝888 體驗期間內購買；888銜接＝體驗到期後 14 天內購買。' :
+        src === 'BR轉介' ? '<br>BR 贈課只給介紹人，一筆轉介通知只能贈送一次（贈課或展延擇一）。17Fit 做法：幫介紹人<b>購買 0 元的「BR贈課…」方案</b>（訂單備註寫編號），不要用場館給予。私人教練課只在新客買私人教練課、介紹人也有私人教練課時才送。' :
+        (src === '生日好禮' || src === 'Google好評') ? '<br>17Fit 做法：幫會員<b>購買 0 元的「' + (src === '生日好禮' ? '生日好禮_團課贈送1堂' : 'Google五星好評_團課贈送1堂') + '」</b>（訂單備註寫編號），不要用場館給予。' : '';
+      $('f-hint').innerHTML = h + extra;
+    };
+    giftHint();
+    $('fld-source').addEventListener('change', giftHint);
+  }
+  if (t === 'REFUND' || t === 'OFFSET') {
+    // 2026-11-22 業主：選好會員與方案後，系統到 17Fit 查資料自動計算退費／可折抵金額並寫出算法；經理可改，但要寫原因
+    var amtKey = t === 'OFFSET' ? 'credit' : 'refund', orderKey = t === 'OFFSET' ? 'oldOrderNo' : 'orderNo', calcSeq = 0;
+    var payDiff = function(){
+      if (t !== 'OFFSET') return;
+      var v = Number($('fld-newPrice').value || 0) - Number($('fld-credit').value || 0);
+      $('fld-payDiff').value = $('fld-newPrice').value === '' ? '' : Math.max(0, Math.round(v));
+    };
+    var runCalc = function(){
+      var m = $('fld-member').value.trim(), c = $('fld-contract').value.trim();
+      var my = ++calcSeq;
+      $('fld-calcAmount').value = ''; $('fld-' + orderKey).value = ''; $('fld-deductQty').value = '';
+      if (!m || !c) { $('fld-calcNote').value = ''; $('fld-' + amtKey).value = ''; payDiff(); return; }
+      $('fld-calcNote').value = '計算中（到 17Fit 查詢這位會員的方案與購買訂單）…';
+      var ad = t === 'REFUND' ? $('fld-applyDate').value : '';
+      if (t === 'REFUND' && !ad) { $('fld-calcNote').value = '請先填「實際申請退費日」'; return; }
+      call('planCalc', S.token, t, m, c, ad).then(function(r){
+        if (my !== calcSeq) return;
+        var lines = (r.lines || []).slice();
+        if (!r.auto) lines.unshift(r.reason || '系統無法計算，請自行填寫。');
+        if (r.blocked) { $('fld-calcNote').value = '⛔ ' + r.reason; $('fld-calcAmount').value = ''; $('fld-' + amtKey).value = ''; flash(r.reason, false); return; }
+        $('fld-calcNote').value = lines.join('\n');
+        $('fld-calcAmount').value = r.auto ? r.amount : '';
+        if (r.auto) $('fld-' + amtKey).value = r.amount;
+        if (r.orderNo) $('fld-' + orderKey).value = r.orderNo;
+        if (r.deductQty !== undefined && r.deductQty !== '') $('fld-deductQty').value = r.deductQty;
+        payDiff();
+      }).catch(function(e){
+        if (my !== calcSeq) return;
+        $('fld-calcNote').value = '系統查詢失敗：' + (e && e.message || e) + '\n請自行填寫金額，並在「不用系統金額的原因」說明怎麼算。';
+        $('fld-calcAmount').value = '';
+      });
+    };
+    $('fld-member').addEventListener('change', runCalc);
+    $('fld-contract').addEventListener('change', runCalc);
+    if (t === 'REFUND') {
+      // 預設今天，最晚只能選今天；改日期就重新計算
+      var td = new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10);
+      $('fld-applyDate').max = td;
+      if (!$('fld-applyDate').value) $('fld-applyDate').value = td;
+      $('fld-applyDate').addEventListener('change', runCalc);
+    }
+    if (t === 'OFFSET') {
+      $('fld-newPrice').addEventListener('input', payDiff); $('fld-credit').addEventListener('input', payDiff);
+      // 2026-11-23 業主：選了新方案後，系統帶入新方案定價（17Fit 商品清單）並算出實際付款金額
+      var prSeq = 0, prMsg = document.createElement('div'); prMsg.className = 'hint';
+      $('fld-newPrice').parentNode.insertBefore(prMsg, $('fld-newPrice').nextSibling);
+      $('fld-newContract').addEventListener('change', function(){
+        var n = $('fld-newContract').value.trim(), my = ++prSeq;
+        $('fld-newPrice').value = ''; payDiff();
+        if (!n) { prMsg.textContent = ''; return; }
+        prMsg.textContent = '到 17Fit 查「' + n + '」的定價…';
+        call('productPrice', S.token, n).then(function(price){
+          if (my !== prSeq) return;
+          if (price === null || price === undefined) { prMsg.textContent = '17Fit 商品清單找不到「' + n + '」的定價，請自行填寫（送出時系統會再查一次）。'; return; }
+          $('fld-newPrice').value = price; prMsg.textContent = '已帶入 17Fit 定價 ' + price + ' 元。';
+          payDiff();
+        }).catch(function(e){ if (my === prSeq) prMsg.textContent = '查定價失敗：' + (e && e.message || e) + '（請自行填寫）'; });
+      });
+    }
+  }
+  if (t === 'EXTEND_ADDON') {
+    // 新到期日＝原到期日＋30 天（2026-11-22 業主），由系統計算，不能手改
+    $('fld-newEnd').readOnly = true;
+    var calcAddon = function(){
+      var p = String($('fld-oldEnd').value).split('-');
+      if (p.length !== 3) { $('fld-newEnd').value = ''; return; }
+      $('fld-newEnd').value = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]) + (S.boot.addonDays || 30) * 86400000).toISOString().slice(0, 10);
+    };
+    $('fld-oldEnd').addEventListener('input', calcAddon); $('fld-oldEnd').addEventListener('change', calcAddon);
+  }
+  if (t === 'REFUND') {
+    var rfInfo = document.createElement('div'); rfInfo.className = 'hint';
+    rfInfo.innerHTML = '17Fit：到「結帳 → 已結帳」開啟當初購買的<b>訂單</b>按「退費」（原因寫編號，不勾自動開折讓）；<b>刷卡買的方案</b>先退名稱完全相符的「刷卡」方案訂單，不足的再退同一天連續建立的「客製化團課專班」訂單（退款方式現金），一筆一筆退到足額；退費<b>不會</b>自動處理方案，要再到方案<b>「場館扣除」</b>上面帶入的堂數（贈送的堂數不扣；方案合併進來的堂數要一起扣；不要按「取消資格」，已約的課要保留）；帳號名稱後面要加註<b>「(已退費)」</b>（下方取消勾選就不加註），日後回來買課要再收帳戶設定費。';
+    $('fld-reason').parentNode.insertBefore(rfInfo, $('fld-reason').nextSibling);
+  }
+  if (t === 'OFFSET' || t === 'MERGE') {
+    var ocInfo = document.createElement('div'); ocInfo.className = 'hint';
+    ocInfo.innerHTML = t === 'OFFSET' ? '學生自願<b>放棄原方案</b>的權利，換取用折扣購買新方案。17Fit：① 新方案結帳時<b>折扣＝上面的折扣金額</b>，折扣原因寫「編號 折抵」，實收＝實際付款金額，<b>只能現金付款</b>，訂單備註寫「編號 購買時使用舊方案折抵，實際付款金額：xxxx」；② 原方案<b>「場館扣除」</b>上面帶入的堂數（贈送的堂數留著，方案合併進來的堂數要一起扣，不要取消資格），原因寫編號；③ 原方案訂單<b>不退費</b>，帳號名稱<b>不用</b>加註。新方案的電子合約要簽<b>實際付款金額</b>的特殊金額合約（每堂平均價＝實付 ÷ 堂數，進位）。活動3（基礎課程升乖寶寶）選「是」時，新方案到期日要<b>再延 30 天</b>。' :
+      '17Fit：新方案「場館給予」合併堂數，<b>舊方案「場館扣除」剩餘堂數到 0</b>（原因欄寫編號）。';
+    $('fld-contract').parentNode.insertBefore(ocInfo, $('fld-contract').nextSibling);
+  }
+  if (t === 'UPGRADE') {
+    // 活動升級（2026-11-22 業主）：選好會員、活動、原方案、新方案後，系統到 17Fit 查原方案，帶入價差、起訖日與兩邊要扣的堂數（都不能改）
+    var upSeq = 0, upKeys = ['oldOrderNo', 'oldStart', 'oldEnd', 'oldDeduct', 'newPrice', 'discount', 'priceDiff', 'newStart', 'newEnd', 'newDeduct'];
+    var runUp = function(){
+      var m = $('fld-member').value.trim(), c = $('fld-contract').value.trim(), cp = $('fld-campaign').value, n = $('fld-newContract').value;
+      var my = ++upSeq;
+      if (!m || !c || !cp || !n) { upKeys.forEach(function(k){ $('fld-' + k).value = ''; }); $('fld-calcNote').value = ''; return; }
+      upKeys.forEach(function(k){ $('fld-' + k).value = ''; });
+      $('fld-calcNote').value = '計算中（到 17Fit 查詢這位會員的方案）…';
+      call('upgradeCalc', S.token, m, c, cp, n, '', $('fld-contractId').value).then(function(r){
+        if (my !== upSeq) return;
+        if (!r.ok) { $('fld-calcNote').value = '⛔ ' + (r.reason || '不能升級'); flash(r.reason || '不能升級', false); return; }
+        $('fld-calcNote').value = (r.lines || []).join('\n');
+        upKeys.forEach(function(k){ var v = r.fields[k]; $('fld-' + k).value = v === undefined || v === null ? '' : v; });
+      }).catch(function(e){
+        if (my !== upSeq) return;
+        $('fld-calcNote').value = '系統查詢失敗：' + (e && e.message || e) + '\n請稍後再試，或確認會員與方案名稱。';
+      });
+    };
+    ['fld-member', 'fld-contract', 'fld-campaign', 'fld-newContract'].forEach(function(id){ $(id).addEventListener('change', runUp); });
+    var upInfo = document.createElement('div'); upInfo.className = 'hint';
+    upInfo.innerHTML = '原方案直接升等級：<b>起算日、堂數不變</b>，只補<b>固定價差（只能現金）</b>，不送課、不退費。17Fit：① 結帳買新方案的<b>現金</b>品項，<b>折扣＝原方案牌價</b>，實收＝價差，折扣原因和訂單備註寫「編號 活動升級」；② 新方案有效期間改成上面的<b>起始日～到期日</b>；③ 新方案「場館扣除」上面帶入的堂數；④ 原方案「場館扣除」付費剩餘堂數（贈送、方案合併進來的堂數留著，不要取消資格）。合約重簽新方案的一般合約，<b>購買日期寫原合約的購買日期</b>。';
+    $('fld-newContract').parentNode.insertBefore(upInfo, $('fld-newContract').nextSibling);
+  }
+  if (t === 'LEAVE') {
+    // 新到期日＝原到期日＋請假天數（含頭含尾），由系統計算，不能手改
+    $('fld-newEnd').readOnly = true;
+    var leaveInfo = document.createElement('div'); leaveInfo.className = 'hint'; leaveInfo.id = 'leaveInfo';
+    leaveInfo.textContent = '17Fit：方案「狀態」改成「暫停」，期間＝請假開始日～結束日；再到「有效期間」把到期日改成新到期日（暫停不會自動延長到期日），兩處原因欄都寫編號。';
+    $('fld-newEnd').parentNode.insertBefore(leaveInfo, $('fld-newEnd').nextSibling);
+    var dayUtc = function(s){ var p = String(s).split('-'); return p.length === 3 ? Date.UTC(+p[0], +p[1] - 1, +p[2]) : NaN; };
+    var calcLeave = function(){
+      var s = dayUtc($('fld-leaveStart').value), e = dayUtc($('fld-leaveEnd').value), o = dayUtc($('fld-oldEnd').value);
+      if (isNaN(s) || isNaN(e) || isNaN(o)) { $('fld-newEnd').value = ''; return; }
+      var days = Math.round((e - s) / 86400000) + 1;
+      if (days < 1) { $('fld-newEnd').value = ''; leaveInfo.textContent = '請假結束日不可早於開始日'; return; }
+      $('fld-newEnd').value = new Date(o + days * 86400000).toISOString().slice(0, 10);
+      leaveInfo.textContent = '請假 ' + days + ' 天：17Fit 方案在 ' + $('fld-leaveStart').value + '～' + $('fld-leaveEnd').value +
+        ' 暫停；有效期間的到期日 ' + $('fld-oldEnd').value + ' → ' + $('fld-newEnd').value + '（暫停不會自動延長，要另外改）。';
+    };
+    ['leaveStart','leaveEnd','oldEnd'].forEach(function(k){ $('fld-' + k).addEventListener('input', calcLeave); $('fld-' + k).addEventListener('change', calcLeave); });
+  }
+  setupSequence(def);
+}
+
+/**
+ * 依序輸入（2026-11-24 業主）：前面的必填欄位有資料了，才開放後面的欄位；選填欄位不擋後面。
+ * 系統帶入的欄位帶入後凍結（SEQ_FREEZE）；系統讀不到資料（欄位是空的）才開放手填，送出時伺服器還會再檢查。
+ * 會員欄點選後鎖住，按「重選」才能換人（換人後，依會員帶出的資料會清掉重新帶入）。
+ */
+var SEQ_FREEZE = {
+  CANCEL_BOOKING: ['course', 'courseAt'], // 從預約清單點選時才凍結（有 17FIT 預約編號）
+  EXTEND: ['oldEnd'], EXTEND_ADDON: ['oldEnd', 'addOnDate'], LEAVE: ['oldEnd'],
+  OFFSET: ['oldOrderNo', 'deductQty', 'newPrice'], REFUND: ['orderNo', 'deductQty'], MERGE: ['qty']
+};
+/** 這個欄位現在是不是必填（依類別、贈課來源） */
+function seqReqNow(t, f){
+  var cat = ($('fld-category') || {}).value || '', src = ($('fld-source') || {}).value || '';
+  if (t === 'CANCEL_BOOKING') {
+    if (/^correct/.test(f.key)) return /^[BD]/.test(cat);
+    if (f.key === 'reason') return /^C/.test(cat);
+  }
+  if (f.reqFor) return f.reqFor.indexOf(src) >= 0;
+  return !!f.required;
+}
+function seqHas(f){
+  var el = $('fld-' + f.key);
+  if (!el || f.type === 'check') return true;
+  var v = String(el.value || '').trim();
+  return f.type === 'member' ? !!v && el.dataset.picked === v : !!v;
+}
+function seqShortLabel(f){ return String(f.label || f.key).split('（')[0]; }
+function seqRefresh(){
+  var t = $('f-type').value, def = S.boot && S.boot.types[t];
+  if (!def) return;
+  var frz = SEQ_FREEZE[t] || [], block = '', lastShown = '';
+  def.fields.forEach(function(f){
+    var el = $('fld-' + f.key);
+    if (!el) return;
+    var box = el.closest('.fsrc');
+    if (box && box.style.display === 'none') return; // 這個贈課來源用不到的欄位
+    if (f.type !== 'hidden') {
+      var off = !!block;
+      if (t === 'TRANSFER' && f.key === 'renameTag') off = off || $('fld-remainPlans').value !== '沒有剩餘方案'; // 轉讓人還有方案就不加註
+      if (f.type === 'planChecks') el.classList.toggle('seq-off', off);
+      else if (el.disabled !== off) el.disabled = off;
+      el.title = off ? (block ? '請先填「' + block + '」' : '轉讓人沒有剩餘方案時才需要') : '';
+      var lb = el.previousElementSibling && el.previousElementSibling.tagName === 'LABEL' ? el.previousElementSibling : f.type === 'check' ? el.parentNode : null;
+      if (lb) lb.classList.toggle('seq-dim', off);
+      if (f.type === 'member') {
+        var picked = seqHas(f);
+        el.readOnly = picked;
+        if (el._redo) el._redo.style.display = picked && !off ? '' : 'none';
+      }
+      if (frz.indexOf(f.key) >= 0) {
+        var v = String(el.value || '').trim();
+        if (!v) delete el.dataset.manual;
+        var lock = t === 'CANCEL_BOOKING' ? !!$('fld-bookingId').value : !!v && el.dataset.manual !== '1';
+        el.readOnly = lock;
+        el.classList.toggle('seq-frozen', lock);
+      }
+      lastShown = seqShortLabel(f);
+    }
+    if (!block && seqReqNow(t, f) && !seqHas(f)) block = f.type === 'hidden' ? lastShown || seqShortLabel(f) : seqShortLabel(f);
+  });
+  // 取消預約：課程欄還不能填時，預約清單也不能點
+  if ($('bk-picks')) Array.prototype.forEach.call($('bk-picks').querySelectorAll('button'), function(b){ b.disabled = $('fld-course').disabled; });
+}
+function setupSequence(def){
+  var t = $('f-type').value, frz = SEQ_FREEZE[t] || [];
+  def.fields.forEach(function(f){
+    var el = $('fld-' + f.key);
+    if (!el) return;
+    // 系統讀不到、欄位是空的時候經理自己點進去填：這次填的值不凍結（上游改了、欄位被清空後恢復）
+    if (frz.indexOf(f.key) >= 0) el.addEventListener('focus', function(){ if (!el.readOnly) el.dataset.manual = '1'; });
+    if (f.type === 'member') {
+      var redo = document.createElement('button');
+      redo.type = 'button'; redo.className = 'seq-redo'; redo.textContent = '重選' + seqShortLabel(f); redo.style.display = 'none';
+      el.parentNode.insertBefore(redo, el.nextSibling);
+      el._redo = redo;
+      redo.onclick = function(){
+        el.readOnly = false; el.value = ''; el.dataset.picked = '';
+        el.dispatchEvent(new Event('input')); el.dispatchEvent(new Event('change'));
+        seqRefresh(); el.focus();
+      };
+    }
+  });
+  var box = $('f-fields');
+  if (!box._seq) {
+    box._seq = true;
+    ['input', 'change', 'click'].forEach(function(ev){ box.addEventListener(ev, function(){ setTimeout(seqRefresh, 0); }); });
+  }
+  clearInterval(S.seqTimer);
+  S.seqTimer = setInterval(seqRefresh, 400); // 系統非同步帶入的值（17Fit 查詢結果）沒有觸發事件，定時重新判斷
+  seqRefresh();
+}
+
+$('f-files').onchange = function(){
+  S.files = []; $('f-thumbs').innerHTML = '';
+  var list = Array.prototype.slice.call(this.files, 0, 6);
+  Promise.all(list.map(readFile)).then(function(arr){
+    S.files = arr;
+    $('f-thumbs').innerHTML = arr.map(function(a){
+      return a.mimeType.indexOf('image') === 0 ? '<img src="data:' + a.mimeType + ';base64,' + a.base64 + '">' : '<span class="badge">' + esc(a.name) + '</span>';
+    }).join('');
+  }).catch(function(e){ flash('讀取附件失敗：' + e.message); });
+};
+function readFile(file){
+  return new Promise(function(res, rej){
+    var fr = new FileReader();
+    fr.onerror = function(){ rej(new Error(file.name)); };
+    fr.onload = function(){
+      if (file.type.indexOf('image') !== 0) return res({ name: file.name, mimeType: file.type, base64: fr.result.split(',')[1] });
+      var img = new Image();
+      img.onload = function(){
+        var max = 1600, w = img.width, h = img.height, r = Math.min(1, max / Math.max(w, h));
+        var cv = document.createElement('canvas'); cv.width = Math.round(w * r); cv.height = Math.round(h * r);
+        cv.getContext('2d').drawImage(img, 0, 0, cv.width, cv.height);
+        res({ name: file.name.replace(/\.\w+$/, '') + '.jpg', mimeType: 'image/jpeg', base64: cv.toDataURL('image/jpeg', 0.82).split(',')[1] });
+      };
+      img.onerror = function(){ rej(new Error(file.name)); };
+      img.src = fr.result;
+    };
+    fr.readAsDataURL(file);
+  });
+}
+
+$('btnSubmit').onclick = function(){
+  var b = this, type = $('f-type').value, def = S.boot.types[type], values = {};
+  def.fields.forEach(function(f){ var el = $('fld-' + f.key); values[f.key] = f.type === 'check' ? (el.checked ? '是' : '否') : el.value; });
+  if (!confirm('確定送出「' + def.label + '」？')) return;
+  busy(b, true);
+  call('submitRequest', S.token, type, values, $('f-branch').value, S.files).then(function(r){
+    if (r.robot) {
+      var rs = (ROBOT_STATUS[r.robot.status] || [r.robot.status])[0];
+      flash('已送出，編號 ' + r.id + '。' + rs + (r.robot.status === 'BLOCKED' ? '，請照原本的方式自己到 17Fit 操作' : '，請到「我的記錄」看機器人做了什麼並確認'), r.robot.status !== 'FAILED');
+    } else
+    flash('已送出，編號 ' + r.id + '。' + (r.idHint ? '17Fit 操作時，請在' + r.idHint + '開頭寫「' + r.id + '」' + (r.status === 'PENDING' ? '（核准後再操作）' : '') : (r.status === 'PENDING' ? '請等核准後再到 17Fit 操作' : '')), true);
+    S.files = []; $('f-files').value = ''; $('f-thumbs').innerHTML = '';
+    // 重新取得可引用的轉介通知（剛送出的轉介或贈課會改變清單）
+    return call('getBootstrap', S.token).then(function(nb){ S.boot.referrals = nb.referrals; renderFields(); });
+  }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
+};
+
+/* ===== 清單 ===== */
+function statusBadge(r){
+  var cls = { REPORTED:'b-info', PENDING:'b-warn', APPROVED:'b-ok', REJECTED:'b-bad', CANCELLED:'' }[r.status] || '';
+  var m = r.matchStatus, mcls = { MATCHED:'b-ok', MATCHED_NO_ID:'b-warn', MISMATCH:'b-bad', NOT_EXECUTED:'b-bad', WAITING:'b-info' }[m] || '';
+  return '<span class="badge ' + cls + '">' + esc(S.boot.statusLabel[r.status] || r.status) + '</span>' +
+    (m && m !== 'SKIPPED' ? '<span class="badge ' + mcls + '">' + esc(S.boot.matchLabel[m] || m) + '</span>' : '');
+}
+function reqCard(r, extra){
+  return '<div class="card"><div><b>' + esc(r.id) + '</b> ' + statusBadge(r) + '</div>' +
+    '<div class="kv">' + esc(r.branch) + '｜' + esc(r.typeLabel) + '｜' + esc(r.applicantName) + '｜<span class="muted">' + esc(r.createdAt) + '</span></div>' +
+    '<div class="kv">會員：' + esc(r.member) + (r.relatedMember ? ' / ' + esc(r.relatedMember) : '') + '</div>' +
+    '<div class="kv">方案：' + esc(r.contract) + '</div>' +
+    '<div class="kv">' + esc(r.summary) + '</div>' +
+    (r.approver ? '<div class="kv muted">簽核：' + esc(r.approver) + ' ' + esc(r.decidedAt) + '</div>' : '') +
+    (r.executedAt ? '<div class="kv muted">17Fit 執行：' + esc(r.executedAt) + '</div>' : '') +
+    (r.matchNote ? '<div class="kv muted">比對：' + esc(r.matchNote) + '</div>' : '') +
+    (r.attachments.length ? '<div class="kv">' + r.attachments.map(function(u, i){ return '<a href="' + esc(u) + '" target="_blank">附件' + (i + 1) + '</a>'; }).join('　') + '</div>' : '') +
+    eformLine(r) + econtractLine(r) + robotLine(r) + (extra || '') + '</div>';
+}
+/** 機器人在 17FIT 做了什麼（2026-11-23 業主：做完條列每一步，請送出的經理確認） */
+var ROBOT_STATUS = { DONE: ['機器人已完成', 'b-ok'], FAILED: ['機器人做到一半停下', 'b-bad'], BLOCKED: ['機器人沒有做', 'b-warn'], RUNNING: ['機器人執行中', 'b-info'] };
+function robotLine(r){
+  var x = r.robot;
+  if (!x) return '';
+  var st = ROBOT_STATUS[x.status] || [x.status, ''];
+  var h = '<div class="kv" style="margin-top:6px;border-top:1px dashed var(--line);padding-top:6px"><span class="badge ' + st[1] + '">' + esc(st[0]) + '</span> <span class="muted">' + esc(x.finishedAt || '') + '</span>';
+  if (x.steps && x.steps.length) h += '<br>' + x.steps.map(function(s, i){ return (s.ok ? '✅ ' : '⛔ ') + (i + 1) + '. ' + esc(s.label) + '：' + esc(s.result); }).join('<br>');
+  if (x.problems && x.problems.length) h += '<br><span style="color:#b91c1c">' + x.problems.map(esc).join('<br>') + '</span>';
+  if (x.status === 'BLOCKED') h += '<br><span class="muted">機器人沒有動 17FIT，請照原本的方式自己操作。</span>';
+  if (x.confirm) h += '<br>' + (x.confirm === 'OK' ? '<span class="badge b-ok">已確認無誤</span>' : '<span class="badge b-bad">回報有問題</span> ' + esc(x.confirmNote)) + ' <span class="muted">' + esc(x.confirmBy) + ' ' + esc(x.confirmAt) + '</span>';
+  else if (x.status === 'DONE' || x.status === 'FAILED') h += '<div class="row" style="margin-top:6px"><button class="btn sec" data-rbok="' + esc(r.id) + '">確認無誤</button><button class="btn sec" data-rbbad="' + esc(r.id) + '">有問題</button></div>';
+  return h + '</div>';
+}
+/** 綁定確認按鈕（清單畫好後呼叫） */
+function bindRobotConfirm(reload){
+  Array.prototype.forEach.call(document.querySelectorAll('[data-rbok],[data-rbbad]'), function(b){
+    b.onclick = function(){
+      var id = b.dataset.rbok || b.dataset.rbbad, ok = !!b.dataset.rbok, note = '';
+      if (!ok) { note = prompt('哪裡有問題？（會通知群組，請管理員到 17FIT 檢查）') || ''; if (!note.trim()) return; }
+      busy(b, true);
+      call('robotConfirm', S.token, id, ok, note).then(function(){ flash(ok ? '已確認' : '已回報，管理員會檢查', true); reload(); })
+        .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
+    };
+  });
+}
+/** 活動升級的憑證是 EzdonPT 的活動升級合約（contractKind＝UPGRADE、requestNo＝這筆編號） */
+function econtractLine(r){
+  var e = r.econtract;
+  if (!e) return '';
+  if (e.error) return '<div class="kv muted">活動升級合約：暫時讀不到 EzdonPT，請稍後重新整理</div>';
+  if (e.none) return '<div class="kv"><span class="badge">活動升級合約尚未建立</span> <span class="muted">教練在 EzdonPT 建立活動升級合約並填 ' + esc(r.id) + '</span></div>';
+  return '<div class="kv">' + (e.signed ? '<span class="badge b-ok">活動升級合約：已簽名 ' + esc(e.signedAt) + '</span>' : '<span class="badge b-warn">活動升級合約：待學員簽名</span>') +
+    (e.pdfUrl ? ' <a href="' + esc(e.pdfUrl) + '" target="_blank">開啟 PDF</a>' : '') + '</div>';
+}
+/** 電子申請書（EzdonPT）：簽名狀態、PDF、學員上傳的附件 */
+function eformLine(r){
+  var e = r.eform;
+  if (!e) return '';
+  if (e.error) return '<div class="kv muted">電子申請書：暫時讀不到 EzdonPT，請稍後重新整理</div>';
+  // 2026-11-23 業主：核准時不擋，只看簽名狀態；附了紙本照片也算。核准後 3 天還沒簽，每日合約稽核列為「申請書未簽」
+  var proofOnly = (S.boot.types[r.type] || {}).attachRequired; // 展延(請假)的附件是請假證明，不是紙本申請書
+  if (!e.signed && !proofOnly && r.attachments && r.attachments.length) return '<div class="kv"><span class="badge b-ok">已附紙本申請書照片</span>' + (e.none ? '' : ' <span class="muted">（電子申請書待學員簽名）</span>') + '</div>';
+  if (e.none) return '<div class="kv"><span class="badge">電子申請書尚未產生</span> <span class="muted">教練在 EzdonPT 輸入 ' + esc(r.id) + ' 產生申請書</span></div>';
+  return '<div class="kv">' + (e.signed ? '<span class="badge b-ok">電子申請書：已簽名 ' + esc(e.signedAt) + '</span>' : '<span class="badge b-warn">電子申請書：待學員簽名</span> <span class="muted">（核准後 3 天還沒簽會列入合約稽核）</span>') +
+    (e.pdfUrl ? ' <a href="' + esc(e.pdfUrl) + '" target="_blank">開啟 PDF</a>' : '') +
+    (e.attachments && e.attachments.length ? '　' + e.attachments.map(function(a){ return '<a href="' + esc(a.url) + '" target="_blank">' + esc(a.label) + (a.private ? '（私密）' : '') + '</a>'; }).join('　') : '') +
+    '</div>';
+}
+function loadMine(){
+  $('mineList').innerHTML = '<p class="muted">載入中…</p>';
+  call('listMyRequests', S.token).then(function(list){
+    $('mineList').innerHTML = list.length ? list.map(function(r){
+      var canCancel = r.status === 'PENDING' || (r.type === 'BR_REFERRAL' && r.status === 'REPORTED');
+      return reqCard(r, canCancel ? '<div style="margin-top:8px"><button class="btn sec" data-cancel="' + esc(r.id) + '">撤回</button></div>' : '');
+    }).join('') : '<p class="muted">尚無記錄</p>';
+    bindRobotConfirm(loadMine);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-cancel]'), function(b){
+      b.onclick = function(){ if (!confirm('撤回 ' + b.dataset.cancel + '？')) return;
+        call('cancelMyRequest', S.token, b.dataset.cancel).then(loadMine).catch(function(e){ flash(e.message); }); };
+    });
+  }).catch(function(e){ flash(e.message); });
+}
+function loadPending(){
+  $('pendingList').innerHTML = '<p class="muted">載入中…</p>';
+  call('adminListRequests', S.token, { status: 'PENDING' }).then(function(list){
+    $('pendingList').innerHTML = list.length ? list.map(function(r){
+      return reqCard(r, '<div class="row" style="margin-top:8px"><button class="btn ok" data-dec="APPROVED" data-id="' + esc(r.id) + '">核准</button>' +
+        '<button class="btn bad" data-dec="REJECTED" data-id="' + esc(r.id) + '">拒絕</button></div>');
+    }).join('') : '<p class="muted">沒有待核准的申請</p>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-dec]'), function(b){
+      b.onclick = function(){
+        if (!confirm((b.dataset.dec === 'APPROVED' ? '核准 ' : '拒絕 ') + b.dataset.id + '？')) return;
+        call('adminDecide', S.token, b.dataset.id, b.dataset.dec).then(function(r){ flash('已處理 ' + b.dataset.id + (r.robot ? '。' + (ROBOT_STATUS[r.robot.status] || [r.robot.status])[0] + '（結果在「報備/申請記錄」那一筆底下）' : ''), !r.robot || r.robot.status !== 'FAILED'); loadPending(); })
+          .catch(function(e){ flash(e.message); });
+      };
+    });
+  }).catch(function(e){ flash(e.message); });
+}
+function buildFilters(){
+  var b = S.boot;
+  $('q-status').innerHTML = '<option value="">全部</option>' + Object.keys(b.statusLabel).map(function(k){ return '<option value="' + k + '">' + esc(b.statusLabel[k]) + '</option>'; }).join('');
+  $('q-match').innerHTML = '<option value="">全部</option>' + Object.keys(b.matchLabel).filter(String).map(function(k){ return '<option value="' + k + '">' + esc(b.matchLabel[k]) + '</option>'; }).join('');
+  $('q-branch').innerHTML = '<option value="">全部</option>' + b.branches.map(function(x){ return '<option>' + esc(x) + '</option>'; }).join('');
+  $('q-type').innerHTML = '<option value="">全部</option>' + Object.keys(b.types).map(function(k){ return '<option value="' + k + '">' + esc(b.types[k].label) + '</option>'; }).join('');
+  $('a-branch').innerHTML = '<option value="">（無）</option>' + b.branches.map(function(x){ return '<option>' + esc(x) + '</option>'; }).join('');
+}
+$('btnQuery').onclick = loadAll;
+$('q-q').addEventListener('keydown', function(e){ if (e.key === 'Enter') loadAll(); });
+function loadAll(){
+  S.allQueried = true;
+  $('allList').innerHTML = '<p class="muted">載入中…</p>';
+  call('adminListRequests', S.token, { status: $('q-status').value, matchStatus: $('q-match').value, branch: $('q-branch').value, type: $('q-type').value,
+    from: $('q-from').value, to: $('q-to').value, q: $('q-q').value.trim() }).then(function(list){
+    $('allList').innerHTML = '<p class="muted">共 ' + list.length + ' 筆（最多顯示 300 筆）</p>' + list.map(function(r){
+      return reqCard(r, (r.matchStatus === 'NOT_EXECUTED' || r.matchStatus === 'MISMATCH' || r.matchStatus === 'MATCHED_NO_ID') ?
+        '<div style="margin-top:8px"><button class="btn sec" data-close="' + esc(r.id) + '">人工確認無誤</button></div>' : '');
+    }).join('');
+    bindRobotConfirm(loadAll);
+    Array.prototype.forEach.call(document.querySelectorAll('[data-close]'), function(b){
+      b.onclick = function(){ var note = prompt('說明（例如：已人工確認 17Fit 操作正確）'); if (note === null) return;
+        call('adminSetMatch', S.token, b.dataset.close, 'MATCHED', note).then(loadAll).catch(function(e){ flash(e.message); }); };
+    });
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnFit').onclick = loadFit;
+var CAT = { SALE_REFUND:'退費', GIVE:'場館給予', DEDUCT:'場館扣除', DISQUALIFY:'取消資格', VALIDITY_CHANGE:'修改有效期', PURCHASE:'購買',
+  CANCEL_COURSE:'取消課程', CANCEL_SERVICE:'取消服務', LATE_CANCEL:'遲退取消', OTHER:'其他',
+  SALE_FREE:'結帳：$0 方案', SALE_DISCOUNT:'結帳：折扣', SALE_INFO:'結帳：免報備贈課' };
+function loadFit(){
+  $('fitList').innerHTML = '<p class="muted">載入中…</p>';
+  call('adminListFitChanges', S.token, { reviewStatus: $('c-review').value, from: $('c-from').value, to: $('c-to').value, q: $('c-q').value.trim() })
+    .then(function(list){
+      $('fitList').innerHTML = '<p class="muted">共 ' + list.length + ' 筆（最多顯示 500 筆）</p>' + list.map(function(c){
+        var st = { UNREPORTED:'<span class="badge b-bad">無報備</span>', SHIFT:'<span class="badge b-info">調整開始日（不需報備）</span>', INFO:'<span class="badge b-info">免報備（備查）</span>', MATCHED:'<span class="badge b-ok">已對應 ' + esc(c.matchedReqId) + '</span>', OK:'<span class="badge">已確認</span>' }[c.reviewStatus] || '';
+        return '<div class="card"><div><b>' + esc(c.memberName) + '</b> <span class="badge b-info">' + esc(CAT[c.category] || c.category) + '</span>' + st + '</div>' +
+          '<div class="kv">' + esc(c.contractName) + '</div><div class="kv">' + esc(c.description) + '</div>' +
+          (c.prevValidity ? '<div class="kv muted">原本有效期間 ' + esc(c.prevValidity) + '</div>' : '') +
+          (c.reason ? '<div class="kv"><span class="badge b-warn">17Fit 原因</span>' + esc(c.reason) + '</div>' : '') +
+          '<div class="kv muted">' + esc(c.changedAt) + '｜操作人 ' + esc(c.adminName) + (c.reqId ? '｜編號 ' + esc(c.reqId) : '') + '</div>' +
+          (c.reviewStatus === 'UNREPORTED' ? '<div style="margin-top:8px"><button class="btn sec" data-ok="' + esc(c.key) + '">確認無誤</button></div>' : '') + '</div>';
+      }).join('');
+      Array.prototype.forEach.call(document.querySelectorAll('[data-ok]'), function(b){
+        b.onclick = function(){ call('adminMarkChangeOk', S.token, b.dataset.ok).then(loadFit).catch(function(e){ flash(e.message); }); };
+      });
+    }).catch(function(e){ flash(e.message); });
+}
+function loadAcc(){
+  call('adminListAccounts', S.token).then(function(list){
+    $('accList').innerHTML = list.map(function(a){
+      return '<div class="card"><b>' + esc(a.displayName) + '</b>（' + esc(a.account) + '）<span class="badge">' + (a.role === 'ADMIN' ? '管理員' : '經理') + '</span>' +
+        '<span class="badge ' + (a.status === 'ACTIVE' ? 'b-ok' : 'b-bad') + '">' + (a.status === 'ACTIVE' ? '啟用' : '停用') + '</span> ' + esc(a.branch) + (a.caPerms ? ' <span class="badge b-info">稽核' + (a.caPerms === 'HANDLE' ? '處理' : '檢視') + ' ' + esc(a.branches || (a.role === 'ADMIN' ? '全部' : '')) + '</span>' : '') +
+        (a.lineCount ? ' <span class="badge b-ok">LINE 已綁定 ' + a.lineCount + ' 人</span>' : ' <span class="badge">LINE 未綁定</span>') +
+        ' <button class="btn sec" style="padding:4px 10px" data-edit=\'' + esc(JSON.stringify(a)) + '\'>編輯</button></div>';
+    }).join('');
+    Array.prototype.forEach.call(document.querySelectorAll('[data-edit]'), function(b){
+      b.onclick = function(){ var a = JSON.parse(b.dataset.edit);
+        $('a-acc').value = a.account; $('a-name').value = a.displayName; $('a-role').value = a.role; $('a-branch').value = a.branch; $('a-status').value = a.status; $('a-cabr').value = a.branches || ''; $('a-caperm').value = a.caPerms || ''; $('a-pwd').value = ''; $('a-clearline').checked = false; window.scrollTo(0, 0); };
+    });
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnAcc').onclick = function(){
+  var b = this; busy(b, true);
+  call('adminUpsertAccount', S.token, { account: $('a-acc').value.trim(), displayName: $('a-name').value.trim(), role: $('a-role').value,
+    branch: $('a-branch').value, status: $('a-status').value, password: $('a-pwd').value,
+    branches: $('a-cabr').value.trim(), caPerms: $('a-caperm').value, clearLine: $('a-clearline').checked })
+    .then(function(){ flash('已儲存', true); $('a-pwd').value = ''; $('a-clearline').checked = false; loadAcc(); }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
+};
+$('btnDaily').onclick = function(){ var b = this; busy(b, true); flash('執行中，約需 1～2 分鐘…', true);
+  call('adminRunDailyNow', S.token).then(function(){ flash('完成，結果已發到 LINE 群組（有問題時才會發）', true); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnRecon').onclick = function(){ var b = this; busy(b, true);
+  call('adminRunReconcile', S.token).then(function(r){ var s = r.stats;
+    flash('比對完成：已執行 ' + (s.MATCHED + s.MATCHED_NO_ID) + '（缺編號 ' + s.MATCHED_NO_ID + '）、不一致 ' + s.MISMATCH + '、未執行 ' + s.NOT_EXECUTED + '、等待中 ' + s.WAITING + '、無報備異動 ' + s.UNREPORTED, true); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnSync').onclick = function(){ var b = this; busy(b, true);
+  call('adminSyncFit', S.token, $('s-from').value, $('s-to').value).then(function(r){ flash('新增 ' + r.added + ' 筆 17Fit 異動', true); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnMembers').onclick = function(){ var b = this; busy(b, true);
+  call('adminSyncMembers', S.token).then(function(r){ fmLoadState(); flash(r.done ? '學員名單已更新：' + r.count + ' 位' : '已下載 ' + r.page + '／' + r.last + ' 頁，其餘會在背景每分鐘接力下載（約 ' + Math.ceil((r.last - r.page) / 150) * 5 + ' 分鐘），完成後學員欄就會用新名單', true); S.memberIndex = null; })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+function robotLoadSettings(){
+  call('adminRobotSettings', S.token, null).then(function(s){
+    $('rb-mode').value = s.mode;
+    $('rb-types').innerHTML = '開放的類別：' + s.ready.map(function(x){
+      return '<label style="display:inline-flex;gap:4px;align-items:center;font-weight:normal;margin-right:10px"><input type="checkbox" style="width:auto" data-rbt="' + esc(x.type) + '"' + (s.types.indexOf(x.type) >= 0 ? ' checked' : '') + '>' + esc(x.label) + '</label>';
+    }).join('');
+    $('rb-testType').innerHTML = (s.testCases || s.ready).map(function(x){ return '<option value="' + esc(x.type) + '">' + esc(x.label) + '</option>'; }).join('');
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnRobotSave').onclick = function(){ var b = this, types = [];
+  Array.prototype.forEach.call(document.querySelectorAll('[data-rbt]'), function(c){ if (c.checked) types.push(c.dataset.rbt); });
+  busy(b, true);
+  call('adminRobotSettings', S.token, { mode: $('rb-mode').value, types: types }).then(function(){ flash('已儲存', true); robotLoadSettings(); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnRobotTest').onclick = function(){ var b = this, t = $('rb-testType').value;
+  // 按兩次才執行（不用 confirm 對話框）
+  if (b.dataset.armed !== t) { b.dataset.armed = t; b.textContent = '再按一次：建立「' + $('rb-testType').selectedOptions[0].text + '」測試單並執行'; return; }
+  b.dataset.armed = ''; b.textContent = '建立測試單並執行';
+  busy(b, true); $('robotTestOut').innerHTML = '<p class="muted">執行中…</p>';
+  call('adminRobotTest', S.token, t).then(function(r){
+    $('robotTestOut').innerHTML = '<div class="kv"><b>' + esc(r.id) + '</b>' + (r.robot ? robotLine({ id: r.id, robot: r.robot }) : '<br>機器人沒有執行（模式關閉、類別沒開放，或不是測試會員）') + '</div>';
+    bindRobotConfirm(function(){ flash('已記錄', true); });
+  }).catch(function(e){ $('robotTestOut').innerHTML = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnRobotTestAll').onclick = function(){ var b = this;
+  if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.textContent = '再按一次：依序建立 8 筆測試單並執行（約 2～4 分鐘）'; return; }
+  b.dataset.armed = ''; b.textContent = '一次跑完第 3 批測試（生日好禮、888、體驗折價、合併、轉讓、活動升級、折抵、退費）';
+  busy(b, true); $('robotTestOut').innerHTML = '<p class="muted">執行中…</p>';
+  call('adminRobotTestBatch', S.token, ['GIFT:生日好禮', 'GIFT:888直購', 'GIFT:體驗折價', 'MERGE', 'TRANSFER', 'UPGRADE', 'OFFSET', 'REFUND']).then(function(list){
+    $('robotTestOut').innerHTML = list.map(function(x){
+      return '<div class="kv"><b>' + esc(x.testCase) + '</b> ' + esc(x.id || '') + (x.error ? '<br><span style="color:#b91c1c">⛔ ' + esc(x.error) + '</span>' : (x.robot ? robotLine({ id: x.id, robot: x.robot }) : '<br>機器人沒有執行')) + '</div>';
+    }).join('');
+  }).catch(function(e){ $('robotTestOut').innerHTML = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnRobotRuns').onclick = function(){ var b = this; busy(b, true);
+  call('adminRobotRuns', S.token).then(function(list){
+    $('robotRunsOut').innerHTML = list.length ? list.map(function(x){
+      return '<div class="card"><div><b>' + esc(x.reqId) + '</b> ' + esc(x.typeLabel) + '｜' + esc(x.member) + '｜' + esc(x.applicantName) + '</div>' + robotLine({ id: x.reqId, robot: x }) + '</div>';
+    }).join('') : '<p class="muted">還沒有紀錄</p>';
+    bindRobotConfirm(function(){ $('btnRobotRuns').click(); });
+  }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnRobotWrite').onclick = function(){ var b = this, id = $('rw-mcid').value.trim();
+  if (!id) { flash('請填測試會員的方案編號'); return; }
+  // 按兩次才執行（不用 confirm 對話框）
+  if (b.dataset.armed !== id) { b.dataset.armed = id; b.textContent = '再按一次：對方案 ' + id + ' 給予 1 堂再扣回 1 堂'; return; }
+  b.dataset.armed = ''; b.textContent = '執行寫入實測';
+  busy(b, true); $('robotWriteOut').innerHTML = '<p class="muted">執行中…</p>';
+  call('adminRobotWriteTest', S.token, id).then(function(r){
+    $('robotWriteOut').innerHTML = '<div class="kv">' + (r.ok ? '<span class="badge b-ok">成功</span>' : '<span class="badge b-bad">失敗</span>') + '<br>' + r.steps.map(esc).join('<br>') + '</div>';
+  }).catch(function(e){ $('robotWriteOut').innerHTML = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnDryRun').onclick = function(){ var b = this; busy(b, true); $('dryRunOut').innerHTML = '<p class="muted">預演中，請稍候…</p>';
+  call('adminRobotDryRun', S.token).then(function(r){
+    var lab = { OK: ['可以照做', 'b-ok'], BLOCK: ['會停下來', 'b-bad'], DONE: ['已執行', 'b-info'], SKIP: ['不在 17FIT 操作', ''] }, cnt = {};
+    r.results.forEach(function(x){ cnt[x.verdict] = (cnt[x.verdict] || 0) + 1; });
+    var order = { BLOCK: 0, OK: 1, DONE: 2, SKIP: 3 };
+    var list = r.results.slice().sort(function(a, b){ return order[a.verdict] - order[b.verdict]; });
+    $('dryRunOut').innerHTML = '<p>最近 ' + r.days + ' 天共 ' + r.total + ' 筆，預演 ' + r.done + ' 筆' + (r.cut ? '（時間到，其餘下次再預演）' : '') + '：' +
+      ['BLOCK', 'OK', 'DONE', 'SKIP'].map(function(v){ return lab[v][0] + ' ' + (cnt[v] || 0); }).join('、') + '</p>' +
+      list.map(function(x){
+        return '<div class="card"><div><b>' + esc(x.id) + '</b> <span class="badge ' + lab[x.verdict][1] + '">' + lab[x.verdict][0] + '</span> ' + esc(x.typeLabel) + '｜' + esc(x.member) + '</div>' +
+          (x.problems.length ? '<div class="kv" style="color:#b91c1c">⛔ ' + x.problems.map(esc).join('<br>⛔ ') + '</div>' : '') +
+          (x.steps.length ? '<div class="kv">' + x.steps.map(function(s, i){ return (i + 1) + '. ' + esc(s); }).join('<br>') + '</div>' : '') +
+          (x.notes.length ? '<div class="kv muted">' + x.notes.map(esc).join('<br>') + '</div>' : '') + '</div>';
+      }).join('');
+  }).catch(function(e){ $('dryRunOut').innerHTML = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnPwd').onclick = function(){ var b = this; busy(b, true);
+  call('changeMyPassword', S.token, $('p-old').value, $('p-new').value).then(function(){ flash('密碼已修改', true); $('p-old').value = ''; $('p-new').value = ''; })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+
+/* ===== 電子合約稽核 ===== */
+var CA = { boot: null, pane: 'cases', last: [] };
+var CA_BADGE = { PASS:'b-ok', EXEMPT:'b-ok', UNSIGNED:'b-bad', NO_SALE:'b-bad', DUPLICATE:'b-bad', MISMATCH:'b-warn', UNMATCHED:'b-warn', REVIEW_REQUIRED:'b-warn', SOURCE_ERROR:'b-info', FORM_UNSIGNED:'b-bad' };
+function caOpen(){
+  var p = CA.boot ? Promise.resolve(CA.boot) : call('caBoot', S.token).then(function(b){ CA.boot = b; caBuildUi(); return b; });
+  p.then(function(){ caShow(CA.pane === 'detail' ? 'cases' : CA.pane); }).catch(function(e){ flash(e.message); });
+}
+function caBuildUi(){
+  var b = CA.boot, panes = [['cases','合約簽訂'],['gc','團課異動']];
+  if (b.scope.admin) panes.push(['fit','方案異動'], ['att','出席狀態確認'], ['va','監視器影像']);
+  Array.prototype.forEach.call(document.querySelectorAll('.ca-admin'), function(el){ el.classList.toggle('hidden', !b.scope.admin); });
+  $('gq-branch').innerHTML = '<option value="">全部</option>' + b.branches.map(function(x){ return '<option>' + esc(x) + '</option>'; }).join('');
+  $('caSeg').innerHTML = panes.map(function(x){ return '<button data-p="' + x[0] + '">' + x[1] + '</button>'; }).join('');
+  Array.prototype.forEach.call($('caSeg').children, function(btn){ btn.onclick = function(){ caShow(btn.dataset.p); }; });
+  $('cq-result').innerHTML = '<option value="">全部</option>' + Object.keys(b.resultLabel).map(function(k){ return '<option value="' + k + '">' + esc(b.resultLabel[k]) + '</option>'; }).join('');
+  $('cq-status').innerHTML = '<option value="">未結案</option><option value="ALL">全部</option>' + Object.keys(b.statusLabel).map(function(k){ return '<option value="' + k + '">' + esc(b.statusLabel[k]) + '</option>'; }).join('');
+  $('cq-branch').innerHTML = '<option value="">全部</option>' + b.branches.map(function(x){ return '<option>' + esc(x) + '</option>'; }).join('');
+}
+function caShow(p){
+  CA.pane = p;
+  ['cases','detail','gc','fit','att','va'].forEach(function(x){ $('ca-' + x).classList.toggle('hidden', x !== p); });
+  Array.prototype.forEach.call($('caSeg').children, function(btn){ btn.classList.toggle('on', btn.dataset.p === p || (p === 'detail' && btn.dataset.p === 'cases')); });
+  if (p === 'cases') caLoadCases();
+  if (p === 'fit') loadFit();
+  if (p === 'att') { attLoadState(); attLoadCases(); }
+  if (p === 'gc') gcLoad();
+  if (p === 'va') { vaLoadView(); vaLoadCases(); }
+}
+function caResultBadge(c){ return '<span class="badge ' + (CA_BADGE[c.result] || '') + '">' + esc(c.resultLabel) + '</span>'; }
+function caCaseCard(c){
+  return '<div class="card" data-case="' + esc(c.caseId) + '" style="cursor:pointer"><div><b>' + esc(c.caseId) + '</b> ' + caResultBadge(c) +
+    '<span class="badge">' + esc(c.statusLabel) + '</span>' + (c.evidenceLevel ? '<span class="badge b-info">證據 ' + esc(c.evidenceLevel) + '</span>' : '') + '</div>' +
+    '<div class="kv">' + esc(c.branch) + '｜' + esc(c.studentName) + ' ' + esc(c.cardNo) + ' ' + esc(c.phoneMasked) + '</div>' +
+    '<div class="kv">' + esc(c.planName) + (c.amount ? '｜' + esc(c.amount) + ' 元' : '') + '</div>' +
+    '<div class="kv muted">' + esc(c.reason) + '</div>' +
+    '<div class="kv muted">' + (c.txAt ? '交易 ' + esc(c.txAt) : '') + (c.contractCreatedAt ? '｜合約 ' + esc(c.contractCreatedAt) : '') + '</div></div>';
+}
+function caBindCards(root){
+  Array.prototype.forEach.call(root.querySelectorAll('[data-case]'), function(el){ el.onclick = function(){ caOpenCase(el.dataset.case); }; });
+}
+function caLoadCases(){
+  var st = $('cq-status').value;
+  var f = { result: $('cq-result').value, branch: $('cq-branch').value, from: $('cq-from').value, to: $('cq-to').value, q: $('cq-q').value };
+  if (st === '') f.openOnly = true; else if (st !== 'ALL') f.status = st;
+  $('caList').innerHTML = '<p class="muted">讀取中…</p>';
+  call('caListCases', S.token, f).then(function(r){
+    $('caList').innerHTML = '<p class="muted">共 ' + r.total + ' 件' + (r.total > 300 ? '（顯示前 300 件）' : '') + '</p>' + r.cases.map(caCaseCard).join('');
+    caBindCards($('caList'));
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnCaQuery').onclick = caLoadCases;
+function caOpenCase(id){
+  caShow('detail');
+  $('ca-detail').innerHTML = '<p class="muted">讀取中…</p>';
+  call('caGetCase', S.token, id).then(function(d){
+    var c = d.case, h = '<div style="margin:8px 0"><button class="btn sec" id="caBack">← 回到案件列表</button></div>' + caCaseCard(c).replace(' data-case="' + esc(c.caseId) + '" style="cursor:pointer"', '');
+    h += '<div class="card"><h2>簽署證據</h2><div class="kv">' + esc(c.evidenceLevel || '無') + '：' + esc(c.evidenceDetail || '－') + '</div>' +
+      (c.signedAt ? '<div class="kv">簽署時間 ' + esc(c.signedAt) + (c.lateDays ? '（逾期 ' + esc(c.lateDays) + ' 天）' : '') + '</div>' : '') +
+      (d.pdfUrl ? '<div class="kv"><a href="' + esc(d.pdfUrl) + '" target="_blank" rel="noopener">開啟合約 PDF</a></div>' : '') + '</div>';
+    if (d.sales.length) h += '<div class="card"><h2>17FIT 交易明細（訂單 ' + esc(c.orderNo) + '）</h2>' + d.sales.map(function(l){
+      return '<div class="kv">' + esc(l.txAt) + '｜' + esc(l.item) + '｜' + esc(l.amount) + ' 元｜' + esc(l.payMethod) + '｜結帳 ' + esc(l.cashier) + '</div>'; }).join('') + '</div>';
+    if (CA.boot.scope.handle) {
+      h += '<div class="card"><h2>處理</h2><label>說明（新增備註、特殊交易、人工結案必填）</label><textarea id="caNote"></textarea><div class="row" style="margin-top:8px">' +
+        CA.boot.actions.map(function(a){ return '<button class="btn sec" data-act="' + a.key + '">' + esc(a.label) + '</button>'; }).join('') + '</div>' +
+        '<p class="muted">處理只會改變這個案件，不會修改 17FIT 或 EZDonPT 的資料。</p></div>';
+    }
+    h += '<div class="card"><h2>處理歷程</h2>' + (d.events.map(function(e){
+      return '<div class="kv">' + esc(e.ts) + '｜' + esc(e.actor) + '｜' + esc(e.action) + (e.toValue ? '→' + esc(e.toValue) : '') + (e.note ? '｜' + esc(e.note) : '') + '</div>'; }).join('') || '<p class="muted">無</p>') + '</div>';
+    $('ca-detail').innerHTML = h;
+    $('caBack').onclick = function(){ caShow('cases'); };
+    Array.prototype.forEach.call(document.querySelectorAll('[data-act]'), function(btn){
+      btn.onclick = function(){ busy(btn, true);
+        call('caAct', S.token, c.caseId, btn.dataset.act, $('caNote').value).then(function(){ flash('已更新', true); caOpenCase(c.caseId); })
+          .catch(function(e){ flash(e.message); }).finally(function(){ busy(btn, false); }); };
+    });
+  }).catch(function(e){ flash(e.message); caShow('cases'); });
+}
+function caLoadRuns(){
+  call('caGetSettings', S.token).then(function(s){
+    $('cs-notify').value = s.CA_NOTIFY === 'on' ? 'on' : 'off'; $('cs-days').value = s.CA_SALES_DAYS || 7; $('cs-lineids').value = s.CA_ADMIN_LINE_IDS || '';
+    if ($('cs-info')) $('cs-info').textContent = '17FIT 機器人授權：' + (s.robotReady ? '已設定' : '未設定（CA_ROBOT_INVOKER）') + '｜失敗通知的管理員：' + s.adminLineIds + ' 位';
+  }).catch(function(e){ flash(e.message); });
+  call('caListRuns', S.token).then(function(list){
+    $('caRunList').innerHTML = list.map(function(r){
+      return '<div class="card"><span class="badge ' + (r.ok === 'Y' ? 'b-ok' : 'b-bad') + '">' + esc(r.job) + '</span> ' + esc(r.startedAt) + '｜查核日 ' + esc(r.targetDate) +
+        '<div class="kv muted">新增 ' + esc(r.newCases) + '｜未結 ' + esc(r.openCases) + (r.salesSync ? '｜銷售 ' + esc(r.salesSync) : '') + '</div>' +
+        (r.error ? '<div class="kv muted">' + esc(r.error) + '</div>' : '') + '</div>';
+    }).join('') || '<p class="muted">尚無紀錄</p>';
+  }).catch(function(e){ flash(e.message); });
+}
+function caRecheck(btn, withSales){
+  busy(btn, true); flash('查核中，請稍候…', true);
+  call('caRecheckNow', S.token, withSales).then(function(r){ flash(r.ok ? '查核完成：新增 ' + (r.stats.newCases || 0) + ' 件' : '查核有問題：' + r.error, r.ok); caLoadCases(); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(btn, false); });
+}
+$('btnCaRecheck').onclick = function(){ caRecheck(this, false); };
+$('btnCaRecheckSales').onclick = function(){ caRecheck(this, true); };
+$('btnCaSettings').onclick = function(){ var b = this; busy(b, true);
+  call('caSaveSettings', S.token, { CA_NOTIFY: $('cs-notify').value, CA_SALES_DAYS: $('cs-days').value, CA_ADMIN_LINE_IDS: $('cs-lineids').value })
+    .then(function(){ flash('設定已儲存', true); caLoadRuns(); }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+var GC_BADGE = { OK:'b-ok', SAME_DAY:'b-warn', UNREPORTED:'b-bad', NOT_APPROVED:'b-bad', REVERTED:'b-info',
+  LEAVE:'b-ok', UNKNOWN:'b-warn', PLAN_LEAVE:'b-bad', PLAN_CLOSED:'b-bad', NOT_DONE:'b-bad', FIXED:'b-info', REPLACED:'b-info' };
+function gcLoad(){
+  if (!$('gq-month').value) $('gq-month').value = new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 7);
+  call('gcList', S.token, { month: $('gq-month').value, result: $('gq-result').value, branch: $('gq-branch').value }).then(function(r){
+    if ($('gq-result').options.length <= 2) Object.keys(r.resultLabel).forEach(function(k){ var o = document.createElement('option'); o.value = k; o.textContent = r.resultLabel[k]; $('gq-result').appendChild(o); });
+    $('gc-info').textContent = '最近一次檢查：' + (r.lastSnapAt ? new Date(r.lastSnapAt).toLocaleString('zh-TW', { hour12: false }) : '尚未執行') + '｜' + r.rows.length + ' 筆';
+    var admin = CA.boot && CA.boot.scope.admin;
+    $('gc-final-card').classList.toggle('hidden', !admin);
+    $('gcList').innerHTML = r.rows.map(function(x, i){
+      return '<div class="card"><span class="badge ' + (GC_BADGE[x.result] || '') + '">' + esc(x.resultLabel) + '</span>' +
+        (x.caseStatus === 'CLOSED' ? '<span class="badge b-ok">已結案</span>' : '') + ' <b>' + esc(x.branch) + '｜' + esc(x.types) + '</b>' +
+        '<div class="kv">' + esc(x.oldText || '（新增）') + (x.newText ? ' → ' + esc(x.newText) : '') + '</div>' +
+        '<div class="kv muted">發現：' + esc(x.detectedAt) + (x.requestId ? '｜申請 ' + esc(x.requestId) : '') + (x.note ? '｜' + esc(x.note) : '') + '</div>' +
+        (x.handlerNote ? '<div class="kv muted">處理：' + esc(x.handler) + '｜' + esc(x.handlerNote) + '</div>' : '') +
+        (admin ? '<div style="margin-top:6px"><button class="btn sec" data-gc="' + i + '">' + (x.caseStatus === 'CLOSED' ? '重新開啟' : '結案') + '</button></div>' : '') + '</div>';
+    }).join('') || '<p class="muted">沒有符合的異動</p>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-gc]'), function(btn){
+      btn.onclick = function(){ var x = r.rows[Number(btn.dataset.gc)], close = x.caseStatus !== 'CLOSED';
+        var note = close ? prompt('結案說明（例如：已補核准、課表誤植已改回）') : '';
+        if (close && !note) return;
+        busy(btn, true);
+        call('gcSetStatus', S.token, x.key, close, note).then(function(){ flash(close ? '已結案' : '已重新開啟', true); gcLoad(); })
+          .catch(function(e){ flash(e.message); }).finally(function(){ busy(btn, false); }); };
+    });
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnGcQuery').onclick = gcLoad;
+$('btnGcFinal').onclick = function(){ var b = this; busy(b, true); $('gc-final').textContent = '從 17FIT 下載課表並比對中（約 1～2 分鐘）…';
+  call('gcMonthEndPreview', S.token, $('gf-month').value).then(function(r){ $('gc-final').textContent = r.text;
+    $('gc-alias').innerHTML = '課名寫法不同但是同一堂課：到 <a href="' + esc(r.aliasUrl) + '" target="_blank">課名對照表（gc_alias）</a> 加一列（定稿寫法、17FIT 寫法，分店空白＝所有分店）。'; })
+    .catch(function(e){ $('gc-final').textContent = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
+/* ===== 系統分頁：方案異動／合約稽核／團課異動／出席提醒／我的密碼 ===== */
+var SYS = { pane: 'ca' };
+function sysOpen(){
+  var adm = S.boot.me.role === 'ADMIN', panes = [];
+  if (adm) panes.push(['fit','方案異動'], ['ca','合約簽訂'], ['gc','團課異動'], ['att','出席狀態確認'], ['va','監視器影像'], ['sched','課表發佈'], ['acc','帳號']);
+  panes.push(['pwd','我的密碼']);
+  if (!panes.some(function(x){ return x[0] === SYS.pane; })) SYS.pane = panes[0][0];
+  $('sysSeg').innerHTML = panes.map(function(x){ return '<button data-p="' + x[0] + '">' + x[1] + '</button>'; }).join('');
+  Array.prototype.forEach.call($('sysSeg').children, function(b){ b.onclick = function(){ sysShow(b.dataset.p); }; });
+  sysShow(SYS.pane);
+}
+function sysShow(p){
+  SYS.pane = p;
+  ['fit','ca','gc','att','va','sched','acc','pwd'].forEach(function(x){ $('sys-' + x).classList.toggle('hidden', x !== p); });
+  Array.prototype.forEach.call($('sysSeg').children, function(b){ b.classList.toggle('on', b.dataset.p === p); });
+  if (p === 'ca') caLoadRuns();
+  if (p === 'fit') { fmLoadState(); robotLoadSettings(); fitLoadRuns(); }
+  if (p === 'acc') loadAcc();
+  if (p === 'gc') gcLoadSys();
+  if (p === 'att') { attLoad(); attLoadLog(); }
+  if (p === 'va') vaLoadSys();
+  if (p === 'sched') ssLoad();
+}
+/** 系統維護 → 方案異動：學員名單狀態 */
+function fmLoadState(){
+  $('fm-state').textContent = '讀取中…';
+  call('adminMemberListStatus', S.token).then(function(s){
+    $('fm-state').textContent = '目前名單：' + s.count + ' 位' + (s.fetchedAt ? '，' + s.fetchedAt + ' 更新' : '（還沒下載過）') +
+      (s.running ? '｜背景下載中：已抓 ' + s.running.page + '／' + s.running.last + ' 頁' : '') + (s.lastError ? '｜最近一次失敗：' + s.lastError : '');
+  }).catch(function(e){ $('fm-state').textContent = e.message; });
+}
+/** 系統維護 → 方案異動：每日排程（下載＋比對＋通知）的執行紀錄（2026-11-24 業主） */
+var FIT_RUN_SRC = { schedule: '排程', manual: '手動' };
+function fitLoadRuns(){
+  call('fitListRuns', S.token).then(function(list){
+    $('fitRunList').innerHTML = list.map(function(r){
+      var s = r.stats, parts = [];
+      parts.push('下載 ' + (r.from ? esc(r.from) + '～' + esc(r.to) + ' ' : '') + (r.synced !== null && r.synced !== undefined ? '新增 ' + esc(r.synced) + ' 筆' : '失敗'));
+      if (s) parts.push('比對：已執行 ' + ((s.MATCHED || 0) + (s.MATCHED_NO_ID || 0)) + (s.MATCHED_NO_ID ? '（缺編號 ' + s.MATCHED_NO_ID + '）' : '') + '、不一致 ' + (s.MISMATCH || 0) +
+        '、未執行 ' + (s.NOT_EXECUTED || 0) + '、等待中 ' + (s.WAITING || 0) + '、無報備異動 ' + (s.UNREPORTED || 0));
+      if (s && s.DETAIL_LEFT) parts.push('時間不夠，17FIT 明細還有 ' + s.DETAIL_LEFT + ' 筆下次再讀');
+      if (r.notified === true) parts.push('有新問題，已發 LINE 群組通知');
+      else if (r.notified === false && s) parts.push('沒有新問題，不發通知');
+      var err = [r.syncError ? '下載：' + r.syncError : '', r.error].filter(Boolean).join('｜');
+      return '<div class="card"><span class="badge ' + (r.ok === 'Y' ? 'b-ok' : 'b-bad') + '">' + esc(FIT_RUN_SRC[r.source] || r.source) + '</span> ' + esc(r.at) +
+        '<div class="kv muted">' + parts.join('｜') + '</div>' + (err ? '<div class="kv muted">' + esc(err) + '</div>' : '') + '</div>';
+    }).join('') || '<p class="muted">尚無紀錄</p>';
+  }).catch(function(e){ flash(e.message); });
+}
+function gcLoadSys(){
+  call('gcGetSettings', S.token).then(function(s){
+    $('gs-notify').value = s.GC_NOTIFY === 'on' ? 'on' : 'off';
+    $('gs-ezkey').value = ''; $('gs-ezurl').value = s.EZONE_API_URL || ''; $('gs-ezurl').placeholder = s.ezoneUrlDefault;
+    $('gs-ezinfo').textContent = 'EZOne 金鑰：' + (s.ezoneKeySet ? '已設定' : '未設定') + (s.planMonth ? '｜' + s.planMonth + ' 起每日稽核改用上班時間計劃比對' : '');
+    $('gs-info').textContent = '最近一次讀課表：' + (s.lastSnapAt ? new Date(s.lastSnapAt).toLocaleString('zh-TW', { hour12: false }) : '尚未讀取') + '｜月底比對排程：' + (s.monthEndTrigger ? '已建立' : '未建立（儲存設定時建立）');
+  }).catch(function(e){ flash(e.message); });
+  call('gcListRuns', S.token).then(function(list){
+    $('gcRunList').innerHTML = list.map(function(r){
+      return '<div class="card"><span class="badge ' + (r.ok === 'Y' ? 'b-ok' : 'b-bad') + '">' + esc(r.sourceLabel) + '</span> ' + esc(r.startedAt) +
+        '<div class="kv muted">' + esc(r.summary) + '</div>' + (r.error ? '<div class="kv muted">' + esc(r.error) + '</div>' : '') + '</div>';
+    }).join('') || '<p class="muted">尚無紀錄</p>';
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnGcSync').onclick = function(){ var b = this; busy(b, true); flash('讀取 17FIT 課表中（約 1 分鐘）…', true);
+  call('gcSyncNow', S.token).then(function(r){ flash(r.ok ? '完成：' + r.summary : '失敗：' + r.error, r.ok); gcLoad(); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnGcSettings').onclick = function(){ var b = this; busy(b, true);
+  call('gcSaveSettings', S.token, { GC_NOTIFY: $('gs-notify').value, EZONE_SERVICE_KEY: $('gs-ezkey').value, EZONE_API_URL: $('gs-ezurl').value }).then(function(){ flash('設定已儲存', true); gcLoadSys(); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnGcTestPlan').onclick = function(){ var b = this; busy(b, true); $('gs-plantest').textContent = '讀取中…';
+  call('gcTestPlan', S.token, '').then(function(r){ $('gs-plantest').textContent = r.text; })
+    .catch(function(e){ $('gs-plantest').textContent = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
+var ATT_MODE_LABEL = { off: '關閉', test: '測試（只發給老闆）', on: '開啟（發給教練）' };
+function attLoadState(){
+  call('attGetSettings', S.token).then(function(s){
+    $('at-state').textContent = '目前狀態：' + (ATT_MODE_LABEL[s.ATT_NOTIFY] || s.ATT_NOTIFY) + (s.lastRun ? '｜每日排程最近成功：' + s.lastRun : '') + '（到「系統維護 → 出席狀態確認」修改）';
+    $('btnAtRun').disabled = s.ATT_NOTIFY === 'off';
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnAtRun').onclick = function(){ var b = this; if (!confirm('確定要立即檢查並發送提醒嗎？')) return; busy(b, true); flash('下載 17FIT 預約總覽並發送中（約 1～2 分鐘）…', true);
+  call('attRunNow', S.token, $('at-day').value).then(function(r){ flash(r.ok ? '完成：' + r.startDay + '～' + r.day + '，發送 ' + r.sent + ' 則' + (r.unbound ? '，未綁定 ' + r.unbound + ' 位已告知老闆' : '') : '失敗：' + r.error, r.ok); attLoadCases(); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+/**
+ * 系統維護 → 出席狀態確認：每次稽核一張卡（2026-11-24 業主：有沒有發送都列），這次有發送的按「展開清單」看發送明細；
+ * 改版前只有發送紀錄，收在最下面。
+ */
+var AT_LOG_LABEL = { sent:'已發送', failed:'失敗', 'unbound-told-boss':'未綁定（已告知老闆）', unbound:'未綁定' };
+function attLogRows(logs){
+  return logs.map(function(x){
+    return '<div class="kv"><span class="badge ' + (x.status === 'failed' ? 'b-bad' : x.status === 'sent' ? 'b-ok' : 'b-info') + '">' + esc(AT_LOG_LABEL[x.status] || x.status) + '</span> ' +
+      esc(x.english || '') + (x.count !== '' ? ' ' + esc(x.count) + ' 筆' : '') + (x.error ? '｜' + esc(x.error) : '') + '</div>';
+  }).join('');
+}
+function attLoadLog(){
+  call('attListRuns', S.token).then(function(d){
+    var h = d.runs.map(function(r){
+      var info = r.pending === '' || r.pending === null ? '' : '尚未確認 ' + esc(r.pending) + ' 筆' + (Number(r.pending) ? '（' + esc(r.coaches) + ' 位教練）' : '');
+      var nums = [info, Number(r.sent) ? '發送 ' + esc(r.sent) + ' 則' : (r.pending === '' ? '' : '沒有發送'), Number(r.failed) ? '失敗 ' + esc(r.failed) + ' 則' : '',
+        Number(r.unbound) ? '未綁定 ' + esc(r.unbound) + ' 位' : '', Number(r.overdue) ? '逾期 ' + esc(r.overdue) + ' 筆' : ''].filter(Boolean).join('｜');
+      return '<div class="card"><span class="badge ' + (r.ok === 'Y' ? 'b-ok' : 'b-bad') + '">' + (r.source === 'schedule' ? '排程' : '手動') + '</span> ' + esc(r.startedAt) +
+        '｜檢查 ' + (r.startDay && r.startDay !== r.day ? esc(r.startDay) + '～' : '') + esc(r.day) + (r.mode === 'test' ? '｜測試' : '') + (r.actor ? '｜' + esc(r.actor) : '') +
+        (nums ? '<div class="kv muted">' + nums + '</div>' : '') + (r.error ? '<div class="kv muted">' + esc(r.error) + '</div>' : '') +
+        (r.logs.length ? '<details style="margin-top:6px"><summary>展開清單（' + r.logs.length + ' 筆）</summary>' + attLogRows(r.logs) + '</details>' : '') + '</div>';
+    }).join('') || '<p class="muted">尚無執行紀錄（改版後每次稽核都會記一筆）</p>';
+    if (d.legacy.length) h += '<details class="card"><summary>改版前的發送紀錄（' + d.legacy.length + ' 筆）</summary>' + d.legacy.map(function(x){
+      return '<div class="kv">' + esc(x.at) + '｜檢查到 ' + esc(x.day) + (x.mode === 'test' ? '｜測試' : '') + '</div>' + attLogRows([x]); }).join('') + '</details>';
+    $('atLogList').innerHTML = h;
+  }).catch(function(e){ flash(e.message); });
+}
+function attLoad(){
+  call('attGetSettings', S.token).then(function(s){
+    $('at-mode').value = s.ATT_NOTIFY; $('at-token').value = '';
+    $('at-info').textContent = 'Nancy 推播權杖：' + (s.tokenSet ? '已設定' : '未設定') + '｜每日排程：' + (s.triggerOn ? '已建立' : '未建立（開啟後自動建立）') + (s.lastRun ? '｜最近成功執行：' + s.lastRun : '');
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnAtSave').onclick = function(){ var b = this; busy(b, true);
+  call('attSaveSettings', S.token, { ATT_NOTIFY: $('at-mode').value, ATT_NANCY_TOKEN: $('at-token').value })
+    .then(function(){ flash('已儲存', true); attLoad(); }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+var AT_BADGE = { PENDING:'b-warn', OVERDUE:'b-bad', CONFIRMED:'b-ok' };
+function attLoadCases(){
+  call('attList', S.token, { result: $('aq-result').value }).then(function(r){
+    $('at-info').textContent = '共 ' + r.total + ' 筆' + (r.total > r.rows.length ? '（只列前 ' + r.rows.length + ' 筆）' : '');
+    $('atList').innerHTML = r.rows.map(function(x, i){
+      return '<div class="card"><span class="badge ' + (AT_BADGE[x.result] || '') + '">' + esc(x.resultLabel) + '</span>' +
+        (x.caseStatus === 'CLOSED' ? '<span class="badge b-ok">已結案</span>' : '') + ' <b>' + esc(x.english) + '｜' + esc(x.day.slice(5).replace('-', '/')) + ' ' + esc(x.time) + '</b>' +
+        '<div class="kv">' + esc([x.item, x.branch, x.customer].filter(String).join('｜')) + '</div>' +
+        '<div class="kv muted">已提醒 ' + esc(x.reminders) + ' 次｜第一次發現：' + esc(x.firstSeenAt) + '｜最近一次：' + esc(x.lastSeenAt) + (x.resolvedAt ? '｜確認：' + esc(x.resolvedAt) : '') + '</div>' +
+        (x.handlerNote ? '<div class="kv muted">處理：' + esc(x.handler) + '｜' + esc(x.handlerNote) + '</div>' : '') +
+        (x.result !== 'CONFIRMED' ? '<div style="margin-top:6px"><button class="btn sec" data-at="' + i + '">' + (x.caseStatus === 'CLOSED' ? '重新開啟' : '結案') + '</button></div>' : '') + '</div>';
+    }).join('') || '<p class="muted">沒有符合的案件</p>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-at]'), function(btn){
+      btn.onclick = function(){ var x = r.rows[Number(btn.dataset.at)], close = x.caseStatus !== 'CLOSED';
+        var note = close ? prompt('結案說明（例如：已追蹤，教練已補確認）') : '';
+        if (close && !note) return;
+        busy(btn, true);
+        call('attSetStatus', S.token, x.key, close, note).then(function(){ flash(close ? '已結案' : '已重新開啟', true); attLoadCases(); })
+          .catch(function(e){ flash(e.message); }).finally(function(){ busy(btn, false); }); };
+    });
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnAtQuery').onclick = attLoadCases;
+
+/* ===== 監視器影像稽核 ===== */
+var VA_BADGE = { BAD:'b-bad', CHECK:'b-warn', UNSURE:'b-info' };
+function vaLines(t){ return String(t || '').split('\n').filter(String).map(function(x){ return '<div class="kv">' + esc(x) + '</div>'; }).join(''); }
+function vaLoadView(){
+  call('vaView', S.token, $('vq-month').value).then(function(r){
+    var s = r.state || {};
+    if (!$('vq-month').value) $('vq-month').value = r.month;
+    $('va-state').textContent = !r.configured ? '尚未設定影像稽核服務（到「系統維護 → 監視器影像」填網址與金鑰）' :
+      r.month + '：' + (r.statusLabel[s.status] || '尚未讀到資料') + (s.day ? '｜抽查日 ' + s.day : '') + (s.statusText ? '｜' + s.statusText : '') +
+      (s.comparedAt ? '｜正式比對：' + s.comparedAt : '｜尚未正式比對') + (s.rejudged ? '｜⚠️ AI 已重新判讀，可按「重新比對」' : '') +
+      (s.note ? '｜' + s.note : '') + (s.error ? '｜讀取失敗：' + s.error : '') + (s.fetchedAt ? '｜最近讀取 ' + s.fetchedAt : '');
+    $('vaSlots').innerHTML = r.rows.map(function(x){
+      var kinds = x.codes ? x.codes.split(',') : [];
+      return '<div class="card"><b>' + esc(x.slotLabel) + '</b> <span class="badge">' + esc(x.typeName) + '</span>' +
+        (x.comparedAt ? '<span class="badge ' + (kinds.length ? 'b-warn' : 'b-ok') + '">' + esc(x.conclusion) + '</span>' : '<span class="badge">尚未正式比對</span>') +
+        '<div class="kv muted" style="margin-top:6px">17FIT（最終版、和抽樣 5 分鐘重疊）</div>' + (x.final ? vaLines(x.final) : '<div class="kv muted">—</div>') +
+        '<div class="kv muted" style="margin-top:6px">AI 觀察（AI 初步分析）</div>' + vaLines(x.rooms) +
+        (x.notes ? '<div class="kv muted" style="margin-top:6px">備註</div>' + vaLines(x.notes) : '') +
+        (x.diffE ? '<div class="kv muted" style="margin-top:6px">和抽查隔天的 17FIT 不同（補登差異，供參考）</div>' + vaLines(x.diffE) : '') + '</div>';
+    }).join('') || '<p class="muted">這個月還沒有抽查資料</p>';
+  }).catch(function(e){ flash(e.message); });
+}
+function vaLoadCases(){
+  call('vaList', S.token, { result: $('vq-result').value }).then(function(r){
+    $('va-info').textContent = '共 ' + r.total + ' 筆' + (r.total > r.rows.length ? '（只列前 ' + r.rows.length + ' 筆）' : '');
+    var opt = function(list){ return list.map(function(v){ return '<option>' + esc(v) + '</option>'; }).join(''); };
+    $('vaList').innerHTML = r.rows.map(function(x, i){
+      var closed = x.caseStatus === 'CLOSED';
+      return '<div class="card"><span class="badge ' + (VA_BADGE[x.kind] || '') + '">' + esc(x.kindLabel) + (x.level ? '（' + esc(x.level) + '）' : '') + '</span>' +
+        (closed ? '<span class="badge b-ok">已結案：' + esc(x.resolutionLabel) + '</span>' : '') + (!x.active ? '<span class="badge">重新比對後不再成立</span>' : '') +
+        ' <b>' + esc(x.slotLabel) + '</b><div class="kv">' + esc(x.codeLabel) + '</div>' + vaLines(x.detail) +
+        '<div class="kv muted">第一次發現：' + esc(x.firstFoundAt) + '</div>' +
+        (x.resolution === 'AI_WRONG' ? '<div class="kv muted">正確答案：' + esc(x.fixActivity) + '｜教練 ' + esc(x.fixCoach) + '｜學員 ' + esc(x.fixStudents) + '</div>' : '') +
+        (x.handler ? '<div class="kv muted">處理：' + esc(x.handler) + (x.handlerNote ? '｜' + esc(x.handlerNote) : '') + (x.closedAt ? '｜' + esc(x.closedAt) : '') + '</div>' : '') +
+        '<div style="margin-top:6px"><button class="btn sec" data-va="' + i + '">' + (closed ? '重新開啟' : '結案') + '</button></div>' +
+        (closed ? '' : '<div class="hidden" id="vaf-' + i + '" style="margin-top:8px">' +
+          '<div class="row"><div><label>結案方式</label><select id="var-' + i + '"><option value="">請選擇</option><option value="CONFIRMED">確認異常</option><option value="AI_WRONG">AI 誤判</option><option value="EXPLAINED">經理已說明</option></select></div></div>' +
+          '<div class="row hidden" id="vafix-' + i + '"><div><label>實際活動</label><select id="vaa-' + i + '"><option value="">請選擇</option>' + opt(r.activities) + '</select></div>' +
+          '<div><label>教練有沒有在帶課</label><select id="vac-' + i + '"><option value="">請選擇</option>' + opt(r.coachOptions) + '</select></div>' +
+          '<div><label>實際學員數</label><input type="number" min="0" max="999" id="vas-' + i + '"></div></div>' +
+          '<label>備註（確認異常、經理已說明必填）</label><input id="van-' + i + '" placeholder="例如：體驗課、已在月中會議說明">' +
+          '<div style="margin-top:6px"><button class="btn" data-vago="' + i + '">送出結案</button></div></div>') + '</div>';
+    }).join('') || '<p class="muted">沒有符合的案件</p>';
+    Array.prototype.forEach.call(document.querySelectorAll('[data-va]'), function(btn){
+      btn.onclick = function(){ var i = Number(btn.dataset.va), x = r.rows[i];
+        if (x.caseStatus !== 'CLOSED') { $('vaf-' + i).classList.toggle('hidden'); return; }
+        if (!confirm('確定要重新開啟這個案件嗎？')) return;
+        busy(btn, true);
+        call('vaSetStatus', S.token, x.key, false, {}).then(function(){ flash('已重新開啟', true); vaLoadCases(); })
+          .catch(function(e){ flash(e.message); }).finally(function(){ busy(btn, false); }); };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[id^="var-"]'), function(sel){
+      sel.onchange = function(){ $('vafix-' + sel.id.slice(4)).classList.toggle('hidden', sel.value !== 'AI_WRONG'); };
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('[data-vago]'), function(btn){
+      btn.onclick = function(){ var i = btn.dataset.vago, x = r.rows[Number(i)];
+        var o = { resolution: $('var-' + i).value, note: $('van-' + i).value, fixActivity: $('vaa-' + i).value, fixCoach: $('vac-' + i).value, fixStudents: $('vas-' + i).value };
+        busy(btn, true);
+        call('vaSetStatus', S.token, x.key, true, o).then(function(){ flash('已結案', true); vaLoadCases(); })
+          .catch(function(e){ flash(e.message); }).finally(function(){ busy(btn, false); }); };
+    });
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnVaView').onclick = vaLoadView;
+$('btnVaQuery').onclick = vaLoadCases;
+$('btnVaRun').onclick = function(){ var b = this; busy(b, true); flash('讀取影像稽核結果中…', true);
+  call('vaRunNow', S.token).then(function(r){ flash(r.lines.join('；') || '完成', true); vaLoadView(); vaLoadCases(); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnVaRecompare').onclick = function(){ var b = this, m = $('vq-month').value;
+  if (!m) { flash('請先選月份'); return; }
+  if (!confirm('確定要用最新的 AI 判讀與薪資來源資料重新比對 ' + m + ' 嗎？已結案的案件會保留。')) return;
+  busy(b, true); flash('重新比對中…', true);
+  call('vaRecompare', S.token, m).then(function(r){ flash('重新比對完成，新案件 ' + r.fresh + ' 件', true); vaLoadView(); vaLoadCases(); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+function vaLoadSys(){
+  call('vaGetSettings', S.token).then(function(s){
+    $('vs-key').value = ''; $('vs-url').value = s.VIDEO_AUDIT_API_URL || '';
+    $('vs-info').textContent = '金鑰：' + (s.keySet ? '已設定' : '未設定') + '｜網址：' + (s.VIDEO_AUDIT_API_URL ? '已設定' : '未設定') + (s.lastRun ? '｜每日讀取最近成功：' + s.lastRun : '');
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnVaSettings').onclick = function(){ var b = this; busy(b, true);
+  call('vaSaveSettings', S.token, { VIDEO_AUDIT_KEY: $('vs-key').value, VIDEO_AUDIT_API_URL: $('vs-url').value }).then(function(){ flash('設定已儲存', true); vaLoadSys(); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnVaTest').onclick = function(){ var b = this; busy(b, true); $('vs-test').textContent = '讀取中…';
+  call('vaTest', S.token, '').then(function(r){ $('vs-test').textContent = r.text; })
+    .catch(function(e){ $('vs-test').textContent = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnAtPreview').onclick = function(){ var b = this; busy(b, true); flash('下載 17FIT 預約總覽中（約 1～2 分鐘）…', true);
+  call('attPreview', S.token, $('at-day').value).then(function(r){
+    flash('試跑完成：' + r.startDay + '～' + r.day + ' 共 ' + r.coaches.length + ' 位教練有尚未確認' + (r.overdue ? '，' + r.overdue + ' 筆已提醒最後一次（會列給老闆）' : ''), true);
+    $('at-preview').innerHTML = r.coaches.map(function(c){
+      return '<div class="card"><span class="badge ' + (c.bound ? 'b-ok' : 'b-bad') + '">' + (c.bound ? '可通知' : '未綁定 Nancy') + '</span> ' + esc(c.english) + '（' + c.count + ' 筆）' +
+        '<pre style="white-space:pre-wrap;margin:6px 0 0">' + esc(c.text) + '</pre></div>';
+    }).join('') || '<p class="muted">' + esc(r.startDay) + '～' + esc(r.day) + ' 沒有尚未確認的預約</p>';
+  }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+
+/* ===== 課表發佈（伺服器 SchedCore.js schedApi；畫面對應課表發佈台的手機審核頁 gas_front/Index.html） =====
+ * 操作者由伺服器依登入帳號決定；能不能製圖、核准由課表後台的 AUDIT_ROLES 決定（這裡只依 whoami 的角色決定按鈕顯示）。 */
+var SCH_NAMES = { core_bed: '核心床', yangmei: '楊梅', zhongli: '中壢', yiwen: '藝文', zhongshan: '中山', neili: '內壢',
+  seven: 'Seven', dahai: 'Dahai', vincent: 'Vincent', angela: 'Angela' };
+var SCH_PAGES = ['core_bed', 'yangmei', 'zhongli', 'yiwen', 'zhongshan', 'neili'];
+var SCH_STATES = { rendering: ['產圖中', 'b-warn'], ready: ['待送出', 'b-warn'], sent: ['待核對', 'b-ok'], failed: ['失敗', 'b-bad'],
+  superseded: ['已被取代', ''], approved: ['已核准', 'b-ok'], revoked: ['已撤銷', 'b-warn'], sent_ok: ['已送達', 'b-ok'], mock_sent: ['已送達（模擬）', 'b-ok'],
+  missing_user_id: ['未設定 LINE', 'b-bad'], unsent: ['尚未送出', ''] };
+var SCH_ROLE_LABEL = { operator: '製圖送審', approver: '核准', reader: '只讀' };
+var SCH_WHO_FIX = { admin: '管理員可修正', tech: '需技術處理', retry: '暫時性問題' };
+var SCH = { me: null, view: null, monthInfo: {}, track: null, autoSendFor: null, submitting: false, skewMs: 0, lastProgress: null,
+  pending: {}, recips: {}, opened: false };
+
+// <sched-poll>（tests/sched-front.test.js）
+// 製圖進度輪詢：與課表發佈台 gas_front/Index.html 的 POLL 規則相同
+var SCH_POLL = { first: 4000, max: 30000, errorMax: 60000, maxErrors: 5, maxTotalMs: 45 * 60000, staleWarnMin: 5 };
+function schNextPoll(state, ok, nowMs) {
+  if (ok) {
+    state.errors = 0;
+    state.delay = state.delay ? Math.min(Math.round(state.delay * 1.5), SCH_POLL.max) : SCH_POLL.first;
+  } else {
+    state.errors = (state.errors || 0) + 1;
+    state.delay = Math.min((state.delay || SCH_POLL.first) * 2, SCH_POLL.errorMax);
+  }
+  if (state.errors >= SCH_POLL.maxErrors) return { stop: 'network' };
+  if (nowMs - state.started > SCH_POLL.maxTotalMs) return { stop: 'too_long' };
+  return { delay: state.delay };
+}
+function schRid(){ return Date.now().toString(36) + Math.random().toString(36).slice(2, 10); }
+/** 每一次按鈕一個 requestId：失敗重試沿用同一個（課表後台以它去重複），成功或後台回「已經送出過」才換新的 */
+function schReqId(pending, key){ return pending[key] || (pending[key] = schRid()); }
+function schReqDone(pending, key){ delete pending[key]; }
+function schIsDuplicate(msg){ return /已經送出過/.test(String(msg || '')); }
+/** Sarah 交接狀態：NANCY 傳送（sent／mock_sent）或手動記錄；資料夾連結只接受 https */
+function schHandoffHtml(h) {
+  if (!h) return '';
+  var label = h.via === 'NANCY' ? (h.status === 'mock_sent' ? '已傳給 Sarah（模擬）' : '已由 NANCY 傳給 Sarah') : '已通知 Sarah 下載';
+  var url = String(h.folder_url || '');
+  return '<span class="badge b-ok">' + esc(label) + '</span> <span class="muted">' + esc(h.by) + '・' + esc(schTime(h.at)) + '</span>' +
+    (/^https:\/\//.test(url) ? ' <a href="' + esc(url) + '" target="_blank" rel="noopener">傳出的資料夾</a>' : '');
+}
+// </sched-poll>
+
+function schTag(state){ var s = SCH_STATES[state] || [state, '']; return '<span class="badge ' + s[1] + '">' + esc(s[0]) + '</span>'; }
+function schHas(role){ return !!(SCH.me && (SCH.me.roles || []).indexOf(role) >= 0); }
+function schMonth(){ return $('sch-month').value; }
+function schLatest(){ var v = SCH.view && SCH.view.versions; return v && v.length ? v[v.length - 1] : null; }
+function schPagesText(list){ return (list || []).map(function(k){ return SCH_NAMES[k] || k; }).join('、'); }
+function schTime(iso){ return iso ? new Date(iso).toLocaleString('zh-TW', { hour12: false }) : ''; }
+function schHms(iso){ return iso ? new Date(iso).toLocaleTimeString('zh-TW', { hour12: false }) : ''; }
+function schAgo(iso){
+  var s = Math.max(0, Math.round((Date.now() - SCH.skewMs - Date.parse(iso)) / 1000));
+  return s < 60 ? s + ' 秒前' : Math.floor(s / 60) + ' 分 ' + (s % 60) + ' 秒前';
+}
+
+/**
+ * 呼叫課表後台（經由 SchedCore.js）。reqKey：會改變狀態的操作要給，同一個 reqKey 重試沿用同一個 requestId。
+ * quiet：失敗時不顯示訊息（呼叫端自己處理）。
+ */
+function schCall(action, args, btns, quiet, reqKey){
+  btns = (btns || []).filter(Boolean);
+  btns.forEach(function(b){ b.disabled = true; });
+  var id = reqKey ? schReqId(SCH.pending, reqKey) : '';
+  return call('schedApi', S.token, action, args || {}, id).then(function(d){
+    btns.forEach(function(b){ b.disabled = false; });
+    if (reqKey) schReqDone(SCH.pending, reqKey);
+    return d;
+  }, function(e){
+    btns.forEach(function(b){ b.disabled = false; });
+    var msg = (e && e.message) || String(e);
+    if (reqKey && schIsDuplicate(msg)) {
+      schReqDone(SCH.pending, reqKey);
+      flash('這個操作已經送出過，已重新整理狀態', true);
+      schRefresh();
+    } else if (!quiet) flash(msg + (reqKey ? '（再按一次會沿用同一個操作編號，不會重複執行）' : ''));
+    throw e;
+  });
+}
+
+/* ---- 進入／離開分頁 ---- */
+function schOpen(){
+  var sc = S.boot.me.sched || {};
+  var why = !sc.configured ? '尚未設定課表後台金鑰。' + (S.boot.me.role === 'ADMIN' ? '請到「系統維護 → 課表發佈」貼上金鑰並按「測試連線」。' : '請通知管理員設定。') : sc.blocked;
+  if (why) { schBlock(why); return; }
+  if (SCH.opened) { schLoadMonth(); return; }
+  $('sch-blocked').classList.add('hidden');
+  $('sch-body').classList.add('hidden');
+  schBlock('連線課表後台中…');
+  schCall('whoami', {}, [], true).then(function(d){
+    SCH.me = d;
+    if (!schHas('operator')) {
+      schBlock('你的帳號（' + d.email + '）在課表後台的角色是「' + ((d.roles || []).map(function(r){ return SCH_ROLE_LABEL[r] || r; }).join('、') || '無') +
+        '」，不能製圖或核准。權限由課表後台的 AUDIT_ROLES 設定，請找業主調整。');
+      return;
+    }
+    $('sch-who').textContent = '課表後台身分：' + d.email + '｜權限：' + d.roles.map(function(r){ return SCH_ROLE_LABEL[r] || r; }).join('、') +
+      '｜' + (d.line_mode === 'live' ? 'LINE 正式' : 'LINE 模擬模式（不會真的送出）') + (d.test_storage ? '｜測試資料夾' : '');
+    schCall('recipients', {}, [], true).then(function(list){
+      SCH.recips = {}; (list || []).forEach(function(r){ SCH.recips[r.key] = r; });
+      if (SCH.view) schRender(SCH.view);
+    }).catch(function(){});
+    return schCall('listMonths', {}, [], true).then(function(opts){
+      SCH.monthInfo = {};
+      var years = [];
+      opts.months.forEach(function(m){ SCH.monthInfo[m.yyyymm] = m; if (years.indexOf(m.year) < 0) years.push(m.year); });
+      $('sch-month').innerHTML = years.map(function(y){
+        return '<optgroup label="' + y + ' 年">' + opts.months.filter(function(m){ return m.year === y; }).map(function(m){
+          var label = m.year + ' 年 ' + m.month + ' 月' + (m.relative ? '（' + m.relative + '）' : '') + (m.note ? '・' + m.note : '');
+          return '<option value="' + esc(m.yyyymm) + '"' + (m.yyyymm === opts['default'] ? ' selected' : '') + '>' + esc(label) + '</option>';
+        }).join('') + '</optgroup>';
+      }).join('');
+      SCH.opened = true;
+      $('sch-blocked').classList.add('hidden');
+      $('sch-body').classList.remove('hidden');
+      schLoadMonth();
+    });
+  }).catch(function(e){ schBlock('無法連上課表後台：' + ((e && e.message) || e)); });
+}
+function schBlock(text){
+  $('sch-blocked').textContent = text;
+  $('sch-blocked').classList.remove('hidden');
+  $('sch-body').classList.add('hidden');
+}
+function schLeave(){ schStopTracking(); }
+
+/* ---- 換月份：載入期間鎖住操作區，晚到的舊月份回應不採用 ---- */
+var SCH_ML = { seq: 0, loading: false, month: null, error: null };
+var SCH_LOAD_TIMEOUT_MS = 90000;
+function schTimeout(p, ms){
+  return new Promise(function(res, rej){
+    var t = setTimeout(function(){ rej(new Error('timeout')); }, ms);
+    p.then(function(v){ clearTimeout(t); res(v); }, function(e){ clearTimeout(t); rej(e); });
+  });
+}
+function schShowMonthNote(){
+  var m = SCH.monthInfo[schMonth()] || {};
+  $('sch-monthNote').textContent = m.state === 'approved' ? '這個月已核准並鎖定，只能查看與下載，不能再製圖（要修改請撤銷定稿）。'
+    : (m.note ? '目前：' + m.note : '這個月還沒有送審紀錄。');
+}
+function schPaint(){
+  var veil = $('sch-veil'), m = SCH_ML.month || schMonth(), label = m ? m.slice(0, 4) + ' 年 ' + Number(m.slice(4)) + ' 月' : '';
+  $('sch-area').classList.toggle('loading', SCH_ML.loading || !!SCH_ML.error);
+  if (SCH_ML.loading) { veil.className = 'sch-veil'; veil.textContent = '正在載入 ' + label + ' 資料，請稍候…'; }
+  else if (SCH_ML.error) {
+    veil.className = 'sch-veil failed';
+    veil.innerHTML = esc(label + ' 的資料' + SCH_ML.error + '。為避免用到舊資料，操作區暫停使用。') + ' <button class="btn sec" id="btnSchMonthRetry">重試</button>';
+    $('btnSchMonthRetry').onclick = schLoadMonth;
+  } else { veil.className = 'sch-veil hidden'; veil.textContent = ''; }
+}
+function schLoadMonth(){
+  schStopTracking();
+  schShowMonthNote();
+  var m = schMonth();
+  SCH_ML.seq += 1; var seq = SCH_ML.seq;
+  SCH_ML.loading = true; SCH_ML.month = m; SCH_ML.error = null;
+  SCH.view = null;
+  schPaint();
+  return Promise.all([
+    schTimeout(schCall('checkSources', { yyyymm: m }, [], true), SCH_LOAD_TIMEOUT_MS),
+    schTimeout(schCall('reviewStatus', { yyyymm: m }, [], true), SCH_LOAD_TIMEOUT_MS)
+  ]).then(function(r){
+    if (seq !== SCH_ML.seq) return;
+    SCH_ML.loading = false;
+    try { schDrawSources(r[0]); schRender(r[1]); }
+    catch (e) { SCH_ML.error = '畫面更新失敗：' + ((e && e.message) || e); }
+    schPaint();
+  }, function(e){
+    if (seq !== SCH_ML.seq) return;
+    SCH_ML.loading = false;
+    SCH_ML.error = e && e.message === 'timeout' ? '載入逾時（超過 ' + SCH_LOAD_TIMEOUT_MS / 1000 + ' 秒）' : '載入失敗：' + ((e && e.message) || e);
+    schPaint();
+  });
+}
+function schGuarded(fn){
+  return function(){
+    if (SCH_ML.loading || SCH_ML.error) { flash(SCH_ML.error ? '請先重新載入這個月的資料' : '正在載入月份資料，請稍候'); return; }
+    return fn.apply(this, arguments);
+  };
+}
+
+/* ---- 來源 Excel ---- */
+function schDrawSources(d){
+  $('sch-sources').innerHTML = Object.keys(d.sources || {}).map(function(b){
+    var s = d.sources[b];
+    return '<div class="sch-row"><div><b>' + esc(b) + '</b><div class="muted">' + esc(s.name || '') + '・工作表 ' + esc(s.sheet || '') +
+      '</div><div class="muted">更新 ' + esc(s.modified ? schTime(s.modified) : '—') + '</div></div>' +
+      (s.ok ? '<span class="badge b-ok">可讀取</span>' : '<span class="badge b-bad">' + (s.sheet_found === false ? '缺工作表' : '有問題') + '</span>') + '</div>';
+  }).join('') + ((d.problems || []).length ? '<div class="sch-err admin"><span class="badge b-warn">管理員可修正</span><ul>' +
+    d.problems.map(function(p){ return '<li>' + esc(p) + '</li>'; }).join('') + '</ul></div>' : '');
+}
+function schLoadSources(){
+  var m = schMonth(), seq = SCH_ML.seq;
+  $('sch-sources').textContent = '讀取中…';
+  return schCall('checkSources', { yyyymm: m }, [$('btnSchSources')]).then(function(d){
+    if (m === schMonth() && seq === SCH_ML.seq) schDrawSources(d);
+  }, function(){ if (m === schMonth()) $('sch-sources').textContent = '讀取失敗'; });
+}
+
+/* ---- 製圖進度與錯誤 ---- */
+function schDrawProgress(v, p, note){
+  var box = $('sch-progress');
+  if (!v) { box.classList.add('hidden'); return; }
+  var stages = p ? p.stages : [{ key: 'sources', label: '檢查來源 Excel', state: 'active' }, { key: 'start', label: '啟動雲端製圖', state: 'pending' }];
+  var m = schMonth();
+  var html = '<div class="sch-prog"><b>⏳ ' + esc(m.slice(0, 4) + ' 年 ' + Number(m.slice(4)) + ' 月・第 ' + v.n + ' 版') + ' 製圖中</b><ul>' +
+    stages.map(function(s){
+      var mark = s.state === 'done' ? '✓' : (s.state === 'active' ? '▶' : '○');
+      return '<li class="' + esc(s.state) + '"><span>' + mark + '</span>' + esc(s.label) + (s.at && s.state === 'done' ? '<time>' + esc(schHms(s.at)) + '</time>' : '') + '</li>';
+    }).join('') + '</ul>';
+  if (p) {
+    html += '<div class="muted" id="sch-progAge">最後更新 ' + esc(schHms(p.updated_at)) + '（' + esc(schAgo(p.updated_at)) + '）・已進行 ' + esc(schAgo(p.started_at).replace('前', '')) + '</div>';
+    if (p.stale_min >= SCH_POLL.staleWarnMin) html += '<div class="muted" style="color:var(--warn)">已 ' + esc(p.stale_min) + ' 分鐘沒有新進度，雲端可能仍在處理；超過 30 分鐘會自動判定逾時。</div>';
+  }
+  if (note) html += '<div class="muted" style="color:var(--warn)">' + esc(note) + '</div>';
+  box.innerHTML = html + '</div>';
+  box.classList.remove('hidden');
+}
+/** 失敗卡片（課表後台的 error_info）：誰能處理、白話說明、收起來的技術細節 */
+function schDrawError(v){
+  var box = $('sch-error');
+  if (!v || v.state !== 'failed' || !v.error) { box.classList.add('hidden'); return; }
+  var e = v.error, actor = SCH_WHO_FIX[e.actor] ? e.actor : 'tech';
+  box.innerHTML = '<div class="sch-err ' + actor + '"><span class="badge ' + (actor === 'admin' ? 'b-warn' : actor === 'retry' ? 'b-info' : 'b-bad') + '">' + SCH_WHO_FIX[actor] + '</span>' +
+    '<h3>第 ' + esc(v.n) + ' 版：' + esc(e.title) + '</h3><p>' + esc(e.message) + '</p>' +
+    (e.suggested_action ? '<p><b>建議：</b>' + esc(e.suggested_action) + '</p>' : '') +
+    '<details><summary>技術細節（給技術人員）</summary><ul>' + (e.details || []).map(function(x){ return '<li>' + esc(x) + '</li>'; }).join('') +
+    '</ul>診斷碼：' + esc(e.diag_id || '') + '</details></div>';
+  box.classList.remove('hidden');
+}
+
+/* ---- 進度輪詢（SCH_POLL） ---- */
+function schStartTracking(n){
+  if (SCH.track && SCH.track.month === schMonth() && SCH.track.n === n) return;
+  schStopTracking();
+  SCH.track = { month: schMonth(), n: n, delay: 0, errors: 0, started: Date.now(), timer: null };
+  schSchedulePoll(schNextPoll(SCH.track, true, Date.now()));
+}
+function schStopTracking(){ if (SCH.track) clearTimeout(SCH.track.timer); SCH.track = null; }
+function schSchedulePoll(next){
+  if (!SCH.track) return;
+  if (next.stop) {
+    var why = next.stop === 'network' ? '連線多次失敗，已停止自動更新。' : '已追蹤很久，停止自動更新。';
+    schDrawProgress(schLatest(), SCH.lastProgress, why + '請按「重新整理狀態」。');
+    $('btnSchResume').classList.remove('hidden');
+    SCH.track = null;
+    return;
+  }
+  SCH.track.timer = setTimeout(schPollOnce, next.delay);
+}
+function schPollOnce(){
+  if (!SCH.track) return;
+  var t = SCH.track;
+  schCall('reviewStatus', { yyyymm: t.month }, [], true).then(function(d){
+    if (SCH.track !== t) return;
+    schRender(d);
+    if (SCH.track === t) schSchedulePoll(schNextPoll(t, true, Date.now()));
+  }, function(){
+    if (SCH.track !== t) return;
+    var next = schNextPoll(t, false, Date.now());
+    if (!next.stop) schDrawProgress(schLatest(), SCH.lastProgress, '連線中斷，' + Math.round(next.delay / 1000) + ' 秒後自動重試…');
+    schSchedulePoll(next);
+  });
+}
+document.addEventListener('visibilitychange', function(){ // 回到頁面時立刻檢查一次
+  if (document.visibilityState === 'visible' && SCH.track) { clearTimeout(SCH.track.timer); schPollOnce(); }
+});
+setInterval(function(){ // 只更新「N 秒前」文字，不連線
+  if (SCH.lastProgress && $('sch-progAge')) {
+    $('sch-progAge').textContent = '最後更新 ' + schHms(SCH.lastProgress.updated_at) + '（' + schAgo(SCH.lastProgress.updated_at) + '）・已進行 ' + schAgo(SCH.lastProgress.started_at).replace('前', '');
+  }
+}, 1000);
+
+/* ---- 畫面 ---- */
+function schRender(d){
+  if (d.month && d.month !== schMonth()) return; // 已經換到別的月份
+  SCH.view = d;
+  if (d.server_time) SCH.skewMs = Date.now() - Date.parse(d.server_time);
+  var v = schLatest(), m = schMonth();
+  $('sch-current').innerHTML = v ? '第 ' + esc(v.n) + ' 版 ' + schTag(v.state) + '<div class="muted">' + esc(v.requested_by) + '・' + esc(schTime(v.requested_at)) + '</div>' +
+    (v.state !== 'failed' && v.issues && v.issues.length ? '<div class="badge b-bad">' + esc(v.issues.join('；')) + '</div>' : '') : '本月尚無版本';
+  $('btnSchSubmit').textContent = v ? '重新製圖（產生第 ' + (v.n + 1) + ' 版）' : '製圖並送審';
+  $('sch-reopen').classList.toggle('hidden', !d.reopen);
+  if (d.reopen) {
+    $('sch-reopen').textContent = '已撤銷第 ' + d.reopen.from_n + ' 版定稿的：' + schPagesText(d.reopen.pages) +
+      '。重新製圖只重做這些頁面，其他頁面沿用已定稿的原圖；送審也只傳重做的頁面。';
+    if (!v || v.n <= d.reopen.from_n || !v.partial) $('btnSchSubmit').textContent = '重做撤銷的頁面（產生第 ' + ((v ? v.n : 0) + 1) + ' 版）';
+  }
+  if (v && v.partial) $('sch-current').innerHTML += '<div class="muted">只重做：' + esc(schPagesText(v.partial.redo)) + '（其他頁面沿用第 ' + esc(v.partial.from_n) + ' 版定稿）</div>' +
+    (v.partial.auto_added && v.partial.auto_added.length ? '<div class="badge b-warn">' + esc((v.partial.notes || [])[0] || '核心床頁一併重做') + '</div>' : '');
+  $('btnSchSubmit').disabled = SCH.submitting || !!d.approved || !!(v && v.state === 'rendering') || !schHas('operator');
+  $('btnSchResume').classList.add('hidden');
+  if (v && v.state === 'rendering') { SCH.lastProgress = d.progress; schDrawProgress(v, d.progress); schStartTracking(v.n); }
+  else { schStopTracking(); SCH.lastProgress = null; schDrawProgress(null); }
+  schDrawError(v);
+
+  // 送審對象與結果
+  var dl = v ? v.deliveries : [], byKey = {};
+  dl.forEach(function(x){ byKey[x.key] = x; });
+  var showResult = v && v.state !== 'rendering' && v.state !== 'failed';
+  $('sch-deliveries').innerHTML = (d.plan || []).map(function(p){
+    var x = byKey[p.key], r = SCH.recips[p.key];
+    var st = p.missing ? 'missing_user_id' : (showResult ? (x ? (x.status === 'sent' ? 'sent_ok' : x.status) : 'ready') : 'unsent');
+    return '<div class="sch-row"><div><b>' + esc(SCH_NAMES[p.key] || p.key) + '</b>' + (r && r.user ? ' <span class="muted">' + esc(r.user) + '</span>' : '') +
+      '<div class="muted">' + esc(schPagesText(p.images)) + '</div></div>' + schTag(st) + '</div>';
+  }).join('') || '—';
+  var failed = dl.some(function(x){ return x.status === 'failed'; });
+  var unsent = v && (v.state === 'ready' || (v.state === 'sent' && failed));
+  $('btnSchRetry').classList.toggle('hidden', !unsent || !schHas('operator'));
+  $('btnSchRetry').textContent = v && v.state === 'ready' && !dl.length ? '送出 LINE 審核' : '重送失敗的對象';
+
+  // 預覽
+  $('sch-previewCard').classList.toggle('hidden', !d.previews);
+  $('sch-previews').innerHTML = (d.previews || []).map(function(p){
+    var ok = /^data:image\/(jpeg|png);base64,/.test(String(p.src || ''));
+    return '<figure>' + (ok ? '<img alt="' + esc(SCH_NAMES[p.key]) + '" src="' + esc(p.src) + '">' : '<div class="badge b-bad">無預覽</div>') +
+      '<figcaption>' + esc(SCH_NAMES[p.key] || p.key) + '</figcaption></figure>';
+  }).join('');
+
+  // 核准
+  $('sch-approveCard').classList.toggle('hidden', !(v && v.state === 'sent' && !d.approved && schHas('approver')));
+  $('btnSchApprove').textContent = v ? '核准第 ' + v.n + ' 版' : '核准';
+  $('sch-approveConfirm').placeholder = '輸入 ' + m + ' 確認';
+  $('sch-doneCard').classList.toggle('hidden', !d.approved);
+  if (d.approved) {
+    $('sch-approved').innerHTML = '第 ' + esc(d.approved.n) + ' 版・' + esc(d.approved.by) + '<div class="muted">' + esc(schTime(d.approved.at)) + '</div>' +
+      (d.approved.archive_folder && /^[A-Za-z0-9_-]+$/.test(d.approved.archive_folder) ? '<a href="https://drive.google.com/drive/folders/' + esc(d.approved.archive_folder) + '" target="_blank" rel="noopener">開啟雲端硬碟歸檔資料夾</a>' : '');
+    $('btnSchHandoff').classList.toggle('hidden', !!d.handoff || !schHas('approver'));
+    $('btnSchSendSarah').classList.toggle('hidden', !!d.handoff || !schHas('approver'));
+    $('sch-revokeBox').classList.toggle('hidden', !schHas('approver'));
+    $('sch-revokeConfirm').placeholder = '輸入 ' + m + ' 確認';
+    if (!$('sch-revokePages').childNodes.length) {
+      $('sch-revokePages').innerHTML = SCH_PAGES.map(function(k){ return '<label><input type="checkbox" value="' + k + '"> ' + esc(SCH_NAMES[k]) + '</label>'; }).join('');
+    }
+    $('sch-handoffDone').innerHTML = schHandoffHtml(d.handoff);
+  } else $('sch-downloads').innerHTML = '';
+  $('sch-versions').innerHTML = d.versions.length ? d.versions.slice().reverse().map(function(x){
+    return '<div class="sch-row"><span>第 ' + esc(x.n) + ' 版 <span class="muted">' + esc(x.requested_by) + '</span></span>' + schTag(x.state) + '</div>';
+  }).join('') : '—';
+
+  // 剛按「製圖並送審」的版本，檢查完成（待送出）就自動送 LINE 審核
+  if (v && v.state === 'ready' && SCH.autoSendFor === m + '#' + v.n) { SCH.autoSendFor = null; schSend(); }
+}
+function schRefresh(){
+  var m = schMonth();
+  if (!m) return Promise.resolve();
+  return schCall('reviewStatus', { yyyymm: m }).then(function(d){ if (m === schMonth()) schRender(d); }, function(){});
+}
+
+/* ---- 按鈕 ---- */
+function schSend(){
+  var v = schLatest(), m = schMonth();
+  if (!v) return Promise.resolve();
+  var action = v.deliveries && v.deliveries.length ? 'retrySend' : 'sendReview';
+  return schCall(action, { yyyymm: m, n: v.n }, [$('btnSchRetry')], false, 'send|' + m + '|' + v.n).then(function(r){
+    flash('第 ' + r.n + ' 版送審結果：' + Object.keys(r.results).map(function(k){
+      return (SCH_NAMES[k] || k) + '：' + (SCH_STATES[r.results[k] === 'sent' ? 'sent_ok' : r.results[k]] || [r.results[k]])[0];
+    }).join('、'), true);
+    return schRefresh();
+  }, function(){});
+}
+$('sch-month').onchange = schLoadMonth;
+$('btnSchSources').onclick = schGuarded(schLoadSources);
+$('btnSchSubmit').onclick = schGuarded(function(){
+  var v = schLatest(), m = schMonth();
+  if (v && !confirm('重新製圖會產生第 ' + (v.n + 1) + ' 版，第 ' + v.n + ' 版將作廢，不能再核准。確定？')) return;
+  SCH.submitting = true;
+  $('btnSchSubmit').disabled = true;
+  schDrawError(null);
+  schDrawProgress({ n: v ? v.n + 1 : 1 }, null);
+  schCall('submitReview', { yyyymm: m }, [$('btnSchSubmit')], false, 'submit|' + m + '|' + (v ? v.n : 0)).then(function(nv){
+    SCH.submitting = false;
+    SCH.autoSendFor = m + '#' + nv.n;
+    return schRefresh();
+  }, function(){
+    SCH.submitting = false;
+    schDrawProgress(null);
+    return schRefresh();
+  });
+});
+$('btnSchResume').onclick = schGuarded(function(){ schStopTracking(); schRefresh(); });
+$('btnSchRetry').onclick = schGuarded(schSend);
+$('sch-previews').onclick = function(e){
+  if (e.target.tagName !== 'IMG') return;
+  $('schZoom').firstChild.src = e.target.src; $('schZoom').style.display = 'block';
+};
+$('schZoom').onclick = function(){ this.style.display = 'none'; };
+$('btnSchApprove').onclick = schGuarded(function(){
+  var v = schLatest(), m = schMonth(), c = $('sch-approveConfirm').value.trim();
+  if (c !== m) { flash('請在欄位輸入月份 ' + m + ' 確認核准'); return; }
+  schCall('approve', { yyyymm: m, n: v.n, confirm: c }, [$('btnSchApprove')], false, 'approve|' + m + '|' + v.n).then(function(){
+    $('sch-approveConfirm').value = '';
+    var mi = SCH.monthInfo[m]; if (mi) { mi.state = 'approved'; }
+    schShowMonthNote();
+    flash('已核准並歸檔。系統不會傳給美工，請在 24 日起通知 Sarah 下載。', true);
+    schRefresh();
+  }, function(){});
+});
+$('btnSchRevoke').onclick = schGuarded(function(){
+  var m = schMonth(), d = SCH.view;
+  var pages = Array.prototype.filter.call($('sch-revokePages').querySelectorAll('input'), function(x){ return x.checked; }).map(function(x){ return x.value; });
+  var reason = $('sch-revokeReason').value.trim(), c = $('sch-revokeConfirm').value.trim();
+  if (!pages.length) { flash('請勾選要撤銷的頁面'); return; }
+  if (!reason) { flash('請填寫撤銷原因'); return; }
+  if (c !== m) { flash('請在欄位輸入月份 ' + m + ' 確認撤銷'); return; }
+  if (!confirm('撤銷 ' + m + ' 的定稿：' + schPagesText(pages) + '。\n本月會重新開放，需重新製圖、送審、核准。確定？')) return;
+  schCall('revokeApproval', { yyyymm: m, pages: pages, reason: reason, confirm: c }, [$('btnSchRevoke')], false,
+    'revoke|' + m + '|' + (d && d.approved ? d.approved.n : 0)).then(function(){
+    $('sch-revokeReason').value = ''; $('sch-revokeConfirm').value = '';
+    Array.prototype.forEach.call($('sch-revokePages').querySelectorAll('input'), function(x){ x.checked = false; });
+    $('sch-revokeBox').open = false;
+    var mi = SCH.monthInfo[m]; if (mi) { mi.state = 'in_review'; mi.note = ''; }
+    schShowMonthNote();
+    flash('已撤銷：' + schPagesText(pages) + '。請按「重做撤銷的頁面」，只會重做這些頁面。', true);
+    schRefresh();
+  }, function(){});
+});
+$('btnSchSendSarah').onclick = schGuarded(function(){
+  var m = schMonth();
+  if (!confirm('NANCY（人資姊姊）會把 ' + m + ' 課表資料夾的連結傳到 Sarah 所在的群組，知道連結的人都能檢視圖檔。\n傳送後就不再提醒。確定傳送？')) return;
+  schCall('sendToSarah', { yyyymm: m }, [$('btnSchSendSarah')], false, 'sarah|' + m).then(function(h){
+    flash(h && h.status === 'mock_sent' ? '模擬模式：沒有真的傳送，已記錄。' : '已傳給 Sarah 的群組。', true); schRefresh();
+  }, function(){});
+});
+$('btnSchHandoff').onclick = schGuarded(function(){
+  var m = schMonth();
+  if (!confirm('確認已通知 Sarah 到雲端資料夾下載 ' + m + ' 的課表圖檔？記錄後就不再每日提醒。')) return;
+  schCall('markHandoff', { yyyymm: m }, [$('btnSchHandoff')], false, 'handoff|' + m).then(function(){
+    flash('已記錄：已通知 Sarah 下載。', true); schRefresh();
+  }, function(){});
+});
+$('btnSchDownloads').onclick = schGuarded(function(){
+  schCall('downloads', { yyyymm: schMonth() }, [$('btnSchDownloads')]).then(function(list){
+    $('sch-downloads').innerHTML = (list || []).filter(function(f){ return /^https:\/\//.test(String(f.url || '')); }).map(function(f){
+      return '<div class="sch-row"><a href="' + esc(f.url) + '" target="_blank" rel="noopener">' + esc(f.name) + '</a><span class="muted">1 小時內有效</span></div>';
+    }).join('');
+  }, function(){});
+});
+
+/* ---- 系統維護 → 課表發佈 ---- */
+function ssLoad(){
+  call('schedGetSettings', S.token).then(function(s){
+    $('ss-key').value = ''; $('ss-url').value = s.SCHEDULE_API_URL || ''; $('ss-url').placeholder = s.urlDefault;
+    $('ss-info').textContent = '金鑰：' + (s.keySet ? '已設定' : '未設定') + '｜網址：' + (s.SCHEDULE_API_URL ? '自訂' : '預設（課表後台 API 部署）');
+  }).catch(function(e){ flash(e.message); });
+}
+$('btnSsSave').onclick = function(){ var b = this; busy(b, true);
+  call('schedSaveSettings', S.token, { SCHEDULE_API_KEY: $('ss-key').value, SCHEDULE_API_URL: $('ss-url').value }).then(function(s){
+    flash('設定已儲存', true); ssLoad();
+    SCH.opened = false; // 換了金鑰或網址：下次進分頁重新連線
+    if (S.boot && S.boot.me.sched) { S.boot.me.sched.configured = !!s.keySet; buildNav(); $('nav').querySelector('[data-v="sys"]').classList.add('on'); }
+  }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnSsTest').onclick = function(){ var b = this; busy(b, true); $('ss-test').textContent = '連線中…';
+  call('schedTest', S.token).then(function(r){ $('ss-test').textContent = r.text; })
+    .catch(function(e){ $('ss-test').textContent = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
+
+/* ===== 從 LINE 開啟：入口頁轉來的網址帶「#lt=<LINE ID token>&go=<目的地>」（LineLogin.js） ===== */
+function parseHash(h){
+  var o = {};
+  String(h || '').replace(/^#/, '').split('&').forEach(function(part){
+    var i = part.indexOf('=');
+    if (i > 0) { try { o[decodeURIComponent(part.slice(0, i))] = decodeURIComponent(part.slice(i + 1)); } catch (e) {} }
+  });
+  return o;
+}
+function readHash(cb){
+  try { google.script.url.getLocation(function(loc){ cb(parseHash(loc && loc.hash)); }); } catch (e) { cb({}); }
+}
+function boot(){
+  readHash(function(q){
+    if (q.go) S.go = String(q.go).slice(0, 30);
+    if (!q.lt) {
+      if (S.token) start().catch(function(){ doLogout(true); });
+      else if (keepGet()) resumeKeep().then(start).catch(function(){ show('login'); });
+      else show('login');
+      return;
+    }
+    try { google.script.history.replace(null, {}, ''); } catch (e) {} // 把 ID token 從網址拿掉
+    var note = $('lg-line'); note.textContent = '正在用 LINE 登入…'; note.classList.remove('hidden'); show('login');
+    call('lineLogin', q.lt).then(function(r){
+      if (r.needBind) {
+        S.bindTicket = r.ticket;
+        note.textContent = (r.lineName ? r.lineName + '，' : '') + '第一次從 LINE 開啟，請用系統帳號密碼登入一次。登入後會綁定你的 LINE，之後從 LINE 點進來就不必再輸入密碼。';
+        return;
+      }
+      note.classList.add('hidden');
+      S.token = r.token; try { sessionStorage.setItem('ezr_token', r.token); } catch (e) {}
+      return start();
+    }).catch(function(e){ note.classList.add('hidden'); S.token = null; show('login'); flash(e.message + '（也可以直接用帳號密碼登入）'); });
+  });
+}
+boot();
+</script>
+</body>
+</html>

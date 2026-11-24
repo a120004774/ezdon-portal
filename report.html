@@ -8,6 +8,7 @@
   報備系統的 LINE 登入入口（LIFF）。原稿在 EzdonReportSystem/web/report.html，發布時複製到公開 repo ezdon-portal 的 report.html。
   LIFF 在 Apps Script 的網頁裡會卡住，所以入口另放在 GitHub Pages：
   這頁只取得 LINE ID token，然後轉到報備系統網址「#lt=<ID token>&go=<目的地>」，由報備系統向 LINE 驗證並登入。
+  報備系統網頁本身也放在同一個 repo（report-system.html，由 EzdonReportSystem 的 web/build-web.js 產生）。
   這頁不存任何資料，也沒有密鑰（LIFF ID 與網址都不是機密）。
 -->
 <style>
@@ -27,7 +28,9 @@
 <script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
 <script>
 var LIFF_ID = '2012353880-oGtwuWW2';
-var WEBAPP_URL = 'https://script.google.com/macros/s/AKfycbzeJKpproQbowrEaRdP9yo09J90Z7kZSDoSuxsYHQvChIvbcDR2eQRtazNV6LVlcm3u/exec';
+// 2026-11-24 改轉到靜態版報表系統（同一個 repo 的 report-system.html，沒有 Google 的橫幅）。
+// 要退回舊版，改回 'https://script.google.com/macros/s/AKfycbzeJKpproQbowrEaRdP9yo09J90Z7kZSDoSuxsYHQvChIvbcDR2eQRtazNV6LVlcm3u/exec' 即可。
+var WEBAPP_URL = 'https://a120004774.github.io/ezdon-portal/report-system.html';
 
 function goParam() {
   var q = new URLSearchParams(location.search);
