@@ -891,7 +891,8 @@ function setupBookings(){
  * 課表來自每日稽核的快照（本月、下個月）；快照沒有涵蓋的日期改成手動輸入。
  */
 /**
- * 單堂體驗折價（2026-11-24 業主）：選了會員後到 17Fit 讀他買的單堂付費訂單（還能退的），點選後帶入品項、購買日、退費金額。
+ * 單堂體驗折價（2026-11-24 業主；11-25 改）：選了會員後，到「單堂(次)專用」帳號找訂單備註寫有他姓名的單堂付費訂單（還能退的），
+ * 兩張以上列選單，點選後帶入品項、購買日、退費金額。
  */
 function setupTrialOrders(){
   var sel = $('fld-singleOrder'), hint = document.createElement('div'); hint.className = 'hint';
@@ -902,7 +903,8 @@ function setupTrialOrders(){
     $('fld-singleItem').value = o ? o.product : ''; $('fld-singleDate').value = o ? o.date : '';
     $('fld-singlePrice').value = o ? o.canRefund : ''; $('fld-singleContractId').value = o ? o.mcid : '';
     if (o) hint.innerHTML = '這筆訂單要退費 <b>' + esc(o.canRefund) + ' 元</b>（' + esc(o.product) + '，' + esc(o.date) + ' 購買' + (o.paid !== o.canRefund ? '，實付 ' + esc(o.paid) + ' 元' : '') +
-      '）；成交的正式方案要是<b>' + (o.pt ? '私人教練課' : '團課') + '</b>方案（照原價購買），系統會再把它場館扣除 1 堂。';
+      '）；成交的正式方案要是<b>' + (o.pt ? '私人教練課' : '團課') + '</b>方案（照原價購買），系統會再把它場館扣除 1 堂。' +
+      (o.remark ? '<br>訂單備註：' + esc(o.remark) : '');
     else if (orders && orders.length) hint.textContent = '請選擇學生當初買的單堂付費訂單。';
   };
   sel.addEventListener('change', setHidden);
@@ -912,14 +914,15 @@ function setupTrialOrders(){
     if (m && (el.dataset.picked !== m || m === loaded)) return;
     loaded = m; var my = ++seq;
     if (!m) { reset('先選會員'); return; }
-    reset('到 17Fit 讀取單堂付費訂單…');
+    reset('到 17Fit 的「單堂(次)專用」帳號找訂單…');
     call('trialOrders', S.token, m).then(function(r){
       if (my !== seq) return;
       if (!r.found) { loaded = null; reset('找不到會員'); hint.textContent = '17Fit 找不到這位會員。'; return; }
       orders = r.orders;
       if (!orders.length) {
-        sel.innerHTML = '<option value="">沒有可以退費的單堂付費訂單</option>'; setHidden();
-        hint.innerHTML = '<span style="color:#b91c1c">⛔ 這位會員沒有可以退費的單堂付費訂單（已經退過的不列）</span>';
+        sel.innerHTML = '<option value="">找不到單堂付費訂單</option>'; setHidden();
+        hint.innerHTML = '<span style="color:#b91c1c">⛔ 「' + esc(r.account || '單堂(次)專用') + '」帳號裡找不到訂單備註寫有「' + esc(m) + '」的單堂付費訂單（已經退過的不列）。' +
+          '請確認當初結帳的訂單備註有寫學生姓名。</span>';
         sel.dispatchEvent(new Event('change')); return;
       }
       sel.innerHTML = '<option value="">請選擇（共 ' + orders.length + ' 筆）</option>' + orders.map(function(o){
@@ -1399,7 +1402,7 @@ function renderFields(){
       '<label>' + esc(f.label) + '<span class="req" style="display:none">*</span></label>' + input + '</div>';
     // 轉讓的第 2 個以後的方案：按「再加一個轉讓方案」才顯示
     if (f.more) return '<div class="fmore" data-more="' + f.more + '" style="display:none"><label>' + esc(f.label) + '</label>' + input + '</div>';
-    return '<label>' + esc(f.label) + req + '</label>' + input;
+    return '<label><span id="lbl-' + id + '">' + esc(f.label) + '</span>' + req + '</label>' + input;
   }).join('');
   var mores = document.querySelectorAll('#f-fields .fmore');
   if (mores.length) {
@@ -1420,6 +1423,11 @@ function renderFields(){
       Array.prototype.forEach.call(document.querySelectorAll('#f-fields .fsrc'), function(d){
         d.style.display = d.dataset.sources.split('|').indexOf(v) >= 0 ? '' : 'none';
         d.querySelector('.req').style.display = d.dataset.reqfor.split('|').indexOf(v) >= 0 ? '' : 'none';
+      });
+      // 依贈課來源換欄位名稱（2026-11-25 業主：888 的受贈會員要有正式卡號）
+      def.fields.forEach(function(f){
+        var lb = f.labelFor && $('lbl-fld-' + f.key);
+        if (lb) lb.textContent = f.labelFor[v] || f.label;
       });
     };
     srcShow();
