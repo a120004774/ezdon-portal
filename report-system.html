@@ -2447,6 +2447,7 @@ function fitLoadRuns(){
       if (s) parts.push('比對：已執行 ' + ((s.MATCHED || 0) + (s.MATCHED_NO_ID || 0)) + (s.MATCHED_NO_ID ? '（缺編號 ' + s.MATCHED_NO_ID + '）' : '') + '、不一致 ' + (s.MISMATCH || 0) +
         '、未執行 ' + (s.NOT_EXECUTED || 0) + '、等待中 ' + (s.WAITING || 0) + '、無報備異動 ' + (s.UNREPORTED || 0));
       if (s && s.DETAIL_LEFT) parts.push('時間不夠，17FIT 明細還有 ' + s.DETAIL_LEFT + ' 筆下次再讀');
+      if (s && s.TIMING) parts.push('花費：下載 ' + (r.syncSec !== undefined && r.syncSec !== null ? r.syncSec : '?') + ' 秒、比對 ' + s.TIMING.total + ' 秒（讀 17FIT 明細 ' + s.TIMING.detailN + ' 筆 ' + s.TIMING.detailRead + ' 秒）');
       if (r.notified === true) parts.push('有新問題，已發 LINE 群組通知');
       else if (r.notified === false && s) parts.push('沒有新問題，不發通知');
       var err = [r.syncError ? '下載：' + r.syncError : '', r.error].filter(Boolean).join('｜');
