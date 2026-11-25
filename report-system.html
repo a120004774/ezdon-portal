@@ -499,19 +499,6 @@
         <div style="margin-top:10px"><button class="btn sec" id="btnMembers">立即下載學員名單</button></div>
       </div>
       <div class="card">
-        <h2>機器人預演</h2>
-        <p class="muted">把最近 14 天的報備、申請照「機器人 17FIT 操作清單」到 17FIT 查一次（只讀，不改任何資料），列出機器人會怎麼做，或會卡在哪裡。約需 1～4 分鐘。</p>
-        <div><button class="btn sec" id="btnDryRun">開始預演</button></div>
-        <div id="dryRunOut"></div>
-      </div>
-      <div class="card">
-        <h2>機器人寫入實測（只限測試會員）</h2>
-        <p class="muted">用經理公用帳戶從伺服器登入 17FIT，對測試會員「測試機器人(請勿使用)」的指定方案場館給予 1 堂、再扣回 1 堂（原因 R0000-000），每一步讀回確認。只能動測試會員。</p>
-        <div class="row"><div><label>測試會員的方案編號</label><input id="rw-mcid" placeholder="例如 4158770"></div></div>
-        <div><button class="btn sec" id="btnRobotWrite">執行寫入實測</button></div>
-        <div id="robotWriteOut"></div>
-      </div>
-      <div class="card">
         <h2>機器人執行設定</h2>
         <p class="muted">報備送出、申請核准後，機器人馬上到 17FIT 做，做完把每一步「改前→改後」列在那一筆底下，請送出的經理確認。檢查沒過的機器人不動 17FIT，經理照舊自己做。</p>
         <div class="row"><div><label>模式</label><select id="rb-mode"><option value="off">關閉</option><option value="test">只限測試會員</option><option value="on">開啟</option></select></div></div>
@@ -519,15 +506,7 @@
         <div><button class="btn sec" id="btnRobotSave">儲存設定</button></div>
       </div>
       <div class="card">
-        <h2>機器人測試（只限測試會員）</h2>
-        <p class="muted">建立一筆測試會員的測試單（申請類直接標成已核准），讓機器人照正式流程做。不受上面的模式影響，一律只動測試會員。測試後 17FIT 的資料要另外改回。</p>
-        <div class="row"><div><label>類型</label><select id="rb-testType"></select></div></div>
-        <div><button class="btn sec" id="btnRobotTest">建立測試單並執行</button></div>
-        <div style="margin-top:6px"><button class="btn sec" id="btnRobotTestAll">一次跑完第 3 批測試（生日好禮、888、體驗折價、合併、轉讓、活動升級、折抵、退費）</button></div>
-        <div id="robotTestOut"></div>
-      </div>
-      <div class="card">
-        <h2>機器人執行紀錄</h2>
+        <h2>機器人操作記錄</h2>
         <div><button class="btn sec" id="btnRobotRuns">讀取最近 100 筆</button></div>
         <div id="robotRunsOut"></div>
       </div>
@@ -2222,7 +2201,6 @@ function robotLoadSettings(){
     $('rb-types').innerHTML = '開放的類別：' + s.ready.map(function(x){
       return '<label style="display:inline-flex;gap:4px;align-items:center;font-weight:normal;margin-right:10px"><input type="checkbox" style="width:auto" data-rbt="' + esc(x.type) + '"' + (s.types.indexOf(x.type) >= 0 ? ' checked' : '') + '>' + esc(x.label) + '</label>';
     }).join('');
-    $('rb-testType').innerHTML = (s.testCases || s.ready).map(function(x){ return '<option value="' + esc(x.type) + '">' + esc(x.label) + '</option>'; }).join('');
   }).catch(function(e){ flash(e.message); });
 }
 $('btnRobotSave').onclick = function(){ var b = this, types = [];
@@ -2230,24 +2208,6 @@ $('btnRobotSave').onclick = function(){ var b = this, types = [];
   busy(b, true);
   call('adminRobotSettings', S.token, { mode: $('rb-mode').value, types: types }).then(function(){ flash('已儲存', true); robotLoadSettings(); })
     .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
-$('btnRobotTest').onclick = function(){ var b = this, t = $('rb-testType').value;
-  // 按兩次才執行（不用 confirm 對話框）
-  if (b.dataset.armed !== t) { b.dataset.armed = t; b.textContent = '再按一次：建立「' + $('rb-testType').selectedOptions[0].text + '」測試單並執行'; return; }
-  b.dataset.armed = ''; b.textContent = '建立測試單並執行';
-  busy(b, true); $('robotTestOut').innerHTML = '<p class="muted">執行中…</p>';
-  call('adminRobotTest', S.token, t).then(function(r){
-    $('robotTestOut').innerHTML = '<div class="kv"><b>' + esc(r.id) + '</b>' + (r.robot ? robotLine({ id: r.id, robot: r.robot }) : '<br>機器人沒有執行（模式關閉、類別沒開放，或不是測試會員）') + '</div>';
-    bindRobotConfirm(function(){ flash('已記錄', true); });
-  }).catch(function(e){ $('robotTestOut').innerHTML = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
-$('btnRobotTestAll').onclick = function(){ var b = this;
-  if (b.dataset.armed !== '1') { b.dataset.armed = '1'; b.textContent = '再按一次：依序建立 8 筆測試單並執行（約 2～4 分鐘）'; return; }
-  b.dataset.armed = ''; b.textContent = '一次跑完第 3 批測試（生日好禮、888、體驗折價、合併、轉讓、活動升級、折抵、退費）';
-  busy(b, true); $('robotTestOut').innerHTML = '<p class="muted">執行中…</p>';
-  call('adminRobotTestBatch', S.token, ['GIFT:生日好禮', 'GIFT:888直購', 'GIFT:體驗折價', 'MERGE', 'TRANSFER', 'UPGRADE', 'OFFSET', 'REFUND']).then(function(list){
-    $('robotTestOut').innerHTML = list.map(function(x){
-      return '<div class="kv"><b>' + esc(x.testCase) + '</b> ' + esc(x.id || '') + (x.error ? '<br><span style="color:#b91c1c">⛔ ' + esc(x.error) + '</span>' : (x.robot ? robotLine({ id: x.id, robot: x.robot }) : '<br>機器人沒有執行')) + '</div>';
-    }).join('');
-  }).catch(function(e){ $('robotTestOut').innerHTML = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
 $('btnRobotRuns').onclick = function(){ var b = this; busy(b, true);
   call('adminRobotRuns', S.token).then(function(list){
     $('robotRunsOut').innerHTML = list.length ? list.map(function(x){
@@ -2255,30 +2215,6 @@ $('btnRobotRuns').onclick = function(){ var b = this; busy(b, true);
     }).join('') : '<p class="muted">還沒有紀錄</p>';
     bindRobotConfirm(function(){ $('btnRobotRuns').click(); });
   }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
-$('btnRobotWrite').onclick = function(){ var b = this, id = $('rw-mcid').value.trim();
-  if (!id) { flash('請填測試會員的方案編號'); return; }
-  // 按兩次才執行（不用 confirm 對話框）
-  if (b.dataset.armed !== id) { b.dataset.armed = id; b.textContent = '再按一次：對方案 ' + id + ' 給予 1 堂再扣回 1 堂'; return; }
-  b.dataset.armed = ''; b.textContent = '執行寫入實測';
-  busy(b, true); $('robotWriteOut').innerHTML = '<p class="muted">執行中…</p>';
-  call('adminRobotWriteTest', S.token, id).then(function(r){
-    $('robotWriteOut').innerHTML = '<div class="kv">' + (r.ok ? '<span class="badge b-ok">成功</span>' : '<span class="badge b-bad">失敗</span>') + '<br>' + r.steps.map(esc).join('<br>') + '</div>';
-  }).catch(function(e){ $('robotWriteOut').innerHTML = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
-$('btnDryRun').onclick = function(){ var b = this; busy(b, true); $('dryRunOut').innerHTML = '<p class="muted">預演中，請稍候…</p>';
-  call('adminRobotDryRun', S.token).then(function(r){
-    var lab = { OK: ['可以照做', 'b-ok'], BLOCK: ['會停下來', 'b-bad'], DONE: ['已執行', 'b-info'], SKIP: ['不在 17FIT 操作', ''] }, cnt = {};
-    r.results.forEach(function(x){ cnt[x.verdict] = (cnt[x.verdict] || 0) + 1; });
-    var order = { BLOCK: 0, OK: 1, DONE: 2, SKIP: 3 };
-    var list = r.results.slice().sort(function(a, b){ return order[a.verdict] - order[b.verdict]; });
-    $('dryRunOut').innerHTML = '<p>最近 ' + r.days + ' 天共 ' + r.total + ' 筆，預演 ' + r.done + ' 筆' + (r.cut ? '（時間到，其餘下次再預演）' : '') + '：' +
-      ['BLOCK', 'OK', 'DONE', 'SKIP'].map(function(v){ return lab[v][0] + ' ' + (cnt[v] || 0); }).join('、') + '</p>' +
-      list.map(function(x){
-        return '<div class="card"><div><b>' + esc(x.id) + '</b> <span class="badge ' + lab[x.verdict][1] + '">' + lab[x.verdict][0] + '</span> ' + esc(x.typeLabel) + '｜' + esc(x.member) + '</div>' +
-          (x.problems.length ? '<div class="kv" style="color:#b91c1c">⛔ ' + x.problems.map(esc).join('<br>⛔ ') + '</div>' : '') +
-          (x.steps.length ? '<div class="kv">' + x.steps.map(function(s, i){ return (i + 1) + '. ' + esc(s); }).join('<br>') + '</div>' : '') +
-          (x.notes.length ? '<div class="kv muted">' + x.notes.map(esc).join('<br>') + '</div>' : '') + '</div>';
-      }).join('');
-  }).catch(function(e){ $('dryRunOut').innerHTML = ''; flash(e.message); }).finally(function(){ busy(b, false); }); };
 $('btnPwd').onclick = function(){ var b = this; busy(b, true);
   call('changeMyPassword', S.token, $('p-old').value, $('p-new').value).then(function(){ flash('密碼已修改', true); $('p-old').value = ''; $('p-new').value = ''; })
     .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
