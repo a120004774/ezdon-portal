@@ -52,7 +52,9 @@ else liff.init({ liffId: LIFF_ID }).then(function () {
   var token = liff.getIDToken();
   if (!token) throw new Error('沒有取得 LINE 身分，請確認 LIFF 的 Scopes 有勾 openid');
   var go = goParam();
-  location.replace(WEBAPP_URL + '#lt=' + encodeURIComponent(token) + (go ? '&go=' + encodeURIComponent(go) : ''));
+  // 2026-11-25：告訴系統是不是在手機 LINE 裡開啟（經理只能用手機 LINE；電腦版 LINE、瀏覽器會被擋）
+  var os = String(liff.getOS() || ''), dv = liff.isInClient() && (os === 'ios' || os === 'android') ? os + '-line' : (liff.isInClient() ? 'pc-line' : 'browser-' + (os || 'web'));
+  location.replace(WEBAPP_URL + '#lt=' + encodeURIComponent(token) + '&dv=' + encodeURIComponent(dv) + (go ? '&go=' + encodeURIComponent(go) : ''));
 }).catch(function (e) { fail('LINE 登入失敗：' + (e && e.message ? e.message : e)); });
 </script>
 </body>

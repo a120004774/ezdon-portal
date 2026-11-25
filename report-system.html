@@ -3073,7 +3073,7 @@ function boot(){
     }
     try { google.script.history.replace(null, {}, ''); } catch (e) {} // 把 ID token 從網址拿掉
     var note = $('lg-line'); note.textContent = '正在用 LINE 登入…'; note.classList.remove('hidden'); show('login');
-    call('lineLogin', q.lt).then(function(r){
+    call('lineLogin', q.lt, q.dv || '').then(function(r){
       if (r.needBind) {
         S.bindTicket = r.ticket;
         note.textContent = (r.lineName ? r.lineName + '，' : '') + '第一次從 LINE 開啟：經理請在下方輸入老闆給的綁定碼；管理員可直接用帳號密碼登入一次。綁定後從 LINE 點進來就會自動登入。';
@@ -3083,7 +3083,7 @@ function boot(){
       note.classList.add('hidden');
       S.token = r.token; try { sessionStorage.setItem('ezr_token', r.token); } catch (e) {}
       return start();
-    }).catch(function(e){ note.classList.add('hidden'); S.token = null; show('login'); flash(e.message + '（也可以直接用帳號密碼登入）'); });
+    }).catch(function(e){ note.classList.add('hidden'); S.token = null; show('login'); flash(e.message + (/手機的 LINE/.test(e.message) ? '' : '（也可以直接用帳號密碼登入）')); });
   });
 }
 boot();
