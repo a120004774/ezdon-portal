@@ -358,17 +358,11 @@
     <div id="ca-fit" class="ca-pane hidden">
       <div class="card">
         <h2>手動稽核</h2>
-        <p class="muted">每天 03:00 自動下載 17FIT「管理者異動方案紀錄」，連同合約稽核下載的銷售報表（$0 方案、結帳折扣），和報備、申請比對。$0 方案（BR 贈課、生日好禮、五星好評等）和結帳折扣都要有報備或申請。</p>
+        <p class="muted">每天 03:00 自動下載 17FIT 前一天的「管理者異動方案紀錄」，連同合約稽核下載的銷售報表（$0 方案、結帳折扣），和報備、申請比對。業主帳號（含機器人）做的異動不檢查。$0 方案（BR 贈課、生日好禮、五星好評等）和結帳折扣都要有報備或申請。</p>
         <div class="row">
-          <button class="btn" id="btnDaily">下載最近 3 天＋比對＋通知</button>
+          <button class="btn" id="btnDaily">重新下載並比對</button>
           <button class="btn sec" id="btnRecon">只重新比對</button>
         </div>
-        <h2>下載指定期間（最多 14 天）</h2>
-        <div class="row">
-          <div><label>從</label><input type="date" id="s-from"></div>
-          <div><label>到</label><input type="date" id="s-to"></div>
-        </div>
-        <div style="margin-top:10px"><button class="btn sec" id="btnSync">下載</button></div>
       </div>
       <div class="card">
         <div class="row">
@@ -538,7 +532,7 @@
         <div id="robotRunsOut"></div>
       </div>
       <h2>執行紀錄</h2>
-      <p class="muted">每天 03:00 自動下載最近 3 天的 17FIT 異動、和報備比對，有新問題才發 LINE 群組通知。</p>
+      <p class="muted">每天 03:00 自動下載前一天的 17FIT 異動、和報備比對，有新問題才發 LINE 群組通知。</p>
       <div id="fitRunList"></div>
     </div>
 
@@ -1013,6 +1007,7 @@ var PLAN_PICK_EMPTY = {
   MERGE: '沒有可合併的方案（要有兩個相同的乖寶寶方案）',
   EXTEND_ADDON: '不符合展延(加購其他方案)條件（會員要有一個有到期日的乖寶寶方案和一個私人教練課方案）',
   LEAVE: '這位會員沒有需要展延的方案（只有有補課期限、有到期日的方案可以請假）',
+  START_SHIFT: '這位會員沒有可以提前或延後啟動的方案（只有有到期日、還沒有任何預約紀錄的方案可以改）',
   UPGRADE: '沒有符合活動條件的方案'
 };
 var EXTEND_TYPES = ['EXTEND', 'EXTEND_ADDON', 'LEAVE'];
@@ -1035,6 +1030,8 @@ function setupPlanPick(def){
     // 展延(加購)：加購的私教方案要在乖寶寶方案到期日之前買的
     pt: function(p){ var b = t === 'EXTEND_ADDON' ? picked('contract') : null; return p.isPT && (!b || !b.end || !p.start || p.start <= b.end); },
     limited: function(p){ return p.limited === true; },
+    // 提前或延後啟動方案：有開始日、到期日，而且 17FIT 方案明細沒有任何預約紀錄（讀不到的不列）
+    unbooked: function(p){ return !!p.start && !!p.end && p.booked === false; },
     upgrade: function(p){ return !!p.upCampaign && p.upCampaign === campaignId(); },
     mergeOld: function(p){ return p.isBaby && Number(p.remaining) > 0 && plans.filter(function(q){ return q.isBaby && q.key === p.key; }).length >= 2; },
     // 2026-11-24 業主：退費不列 0 元贈送、已經沒有堂數的方案；折抵只列還有堂數、付費買的方案
@@ -1064,6 +1061,9 @@ function setupPlanPick(def){
     if (f.key === 'contract' && EXTEND_TYPES.indexOf(t) >= 0) setVal('fld-oldEnd', p && p.end || '');
     if (f.key === 'addOnContract') setVal('fld-addOnDate', p && p.start || '');
     if (f.key === 'contract' && t === 'MERGE') setVal('fld-qty', p && p.remaining !== '' ? p.remaining : '');
+    if (f.key === 'contract' && t === 'START_SHIFT') {
+      setVal('fld-oldStart', p && p.start || ''); setVal('fld-oldEnd', p && p.end || ''); setVal('fld-newStart', p && p.start || '');
+    }
   };
   var fill = function(f){
     var sel = $('fld-' + f.key), cur = sel.options[sel.selectedIndex], keep = cur && cur.dataset.id;
@@ -1109,7 +1109,7 @@ function setupPlanPick(def){
     loaded = m; var my = ++seq; plans = null; info.innerHTML = '';
     if (!m) { fillAll(); return; }
     fillAll(); info.textContent = '到 17Fit 讀取這位會員的方案…';
-    memberPlansCached(m).then(function(r){
+    memberPlansCached(m, t === 'START_SHIFT').then(function(r){
       if (my !== seq) return;
       if (!r.found) { loaded = null; info.innerHTML = '⚠ 17Fit 找不到「' + esc(m) + '」。'; return; }
       plans = r.plans;
@@ -1239,10 +1239,11 @@ function filterMembers(names, q, limit){
   return out;
 }
 /** 同一位學員的方案只讀一次（方案欄、888 成交方案共用） */
-function memberPlansCached(m){
+function memberPlansCached(m, withBooked){
   S.mpCache = S.mpCache || {};
-  if (!S.mpCache[m]) S.mpCache[m] = call('memberPlans', S.token, m).catch(function(e){ delete S.mpCache[m]; throw e; });
-  return S.mpCache[m];
+  var k = m + (withBooked ? '|booked' : '');
+  if (!S.mpCache[k]) S.mpCache[k] = call('memberPlans', S.token, m, !!withBooked).catch(function(e){ delete S.mpCache[k]; throw e; });
+  return S.mpCache[k];
 }
 function setupMemberPlans(def){
   var fields = def.fields.filter(function(f){ return f.ofMember && $('fld-' + f.key); });
@@ -1349,6 +1350,7 @@ function manualSteps(t, src){
     case 'SPECIAL_GIFT': return '在選的方案<b>「場館給予」</b>贈送堂數，原因欄寫「編號 特殊贈課 原因」。';
     case 'TRIAL_DISCOUNT': return '① 單堂付費的訂單按<b>「退費」</b>（現金，不勾自動開折讓，原因寫編號）；② 成交的正式方案<b>「場館扣除」1 堂</b>，原因寫編號。';
     case 'EXTEND': case 'EXTEND_ADDON': return '在方案的<b>「有效期間」</b>把到期日改成新到期日，原因欄寫編號。';
+    case 'START_SHIFT': return '在方案的<b>「有效期間」</b>把起始日、到期日改成上面的新開始日、新到期日，原因欄寫編號。';
     case 'LEAVE': return '方案「狀態」改成<b>「暫停」</b>，期間＝請假開始日～結束日；再到<b>「有效期間」</b>把到期日改成新到期日（暫停不會自動延長到期日），兩處原因欄都寫編號。';
     case 'LEAVE_END': return '方案的暫停期間改成<b>「請假開始日～銷假日前一天」</b>，再到<b>「有效期間」</b>把到期日改成新到期日，兩處原因欄都寫編號。';
     case 'CANCEL_BOOKING': return 'A、C 類：這筆預約按<b>「無條件取消」</b>。B、D 類：先確認正確課程還有名額，再無條件取消原預約，然後用上面選的方案（D 類用 $888 方案）幫學員<b>預約正確課程</b>，預約備註寫編號。';
@@ -1741,6 +1743,22 @@ function renderFields(){
       $('fld-newEnd').value = new Date(Date.UTC(+p[0], +p[1] - 1, +p[2]) + (S.boot.addonDays || 30) * 86400000).toISOString().slice(0, 10);
     };
     $('fld-oldEnd').addEventListener('input', calcAddon); $('fld-oldEnd').addEventListener('change', calcAddon);
+  }
+  if (t === 'START_SHIFT') {
+    // 新到期日＝原到期日＋（新開始日－原開始日），有效期長度不變；由系統計算，不能手改（2026-11-25 業主）
+    $('fld-newEnd').readOnly = true;
+    var ssInfo = document.createElement('div'); ssInfo.className = 'hint';
+    $('fld-newEnd').parentNode.insertBefore(ssInfo, $('fld-newEnd').nextSibling);
+    var ssDay = function(v){ var q = String(v || '').split('-'); return q.length === 3 ? Date.UTC(+q[0], +q[1] - 1, +q[2]) : NaN; };
+    var calcShift = function(){
+      var a = ssDay($('fld-oldStart').value), b = ssDay($('fld-oldEnd').value), c = ssDay($('fld-newStart').value);
+      if (isNaN(a) || isNaN(b) || isNaN(c)) { $('fld-newEnd').value = ''; ssInfo.textContent = ''; return; }
+      $('fld-newEnd').value = new Date(b + (c - a)).toISOString().slice(0, 10);
+      var d = Math.round((c - a) / 86400000);
+      ssInfo.textContent = !d ? '新開始日和原開始日相同，請改成要提前或延後的日期。' :
+        (d < 0 ? '提前 ' + (-d) : '延後 ' + d) + ' 天啟動：有效期間 ' + $('fld-oldStart').value + '～' + $('fld-oldEnd').value + ' → ' + $('fld-newStart').value + '～' + $('fld-newEnd').value + '。';
+    };
+    ['fld-oldStart', 'fld-oldEnd', 'fld-newStart'].forEach(function(id){ $(id).addEventListener('input', calcShift); $(id).addEventListener('change', calcShift); });
   }
   if (t === 'REFUND') {
     var rfInfo = document.createElement('div'); rfInfo.className = 'hint';
@@ -2188,15 +2206,12 @@ $('btnAcc').onclick = function(){
     branches: $('a-cabr').value.trim(), caPerms: $('a-caperm').value, clearLine: $('a-clearline').checked })
     .then(function(){ flash('已儲存', true); $('a-pwd').value = ''; $('a-clearline').checked = false; loadAcc(); }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); });
 };
-$('btnDaily').onclick = function(){ var b = this; busy(b, true); flash('執行中，約需 1～2 分鐘…', true);
+$('btnDaily').onclick = function(){ var b = this; busy(b, true); flash('重新下載前一天的 17FIT 異動並比對中…', true);
   call('adminRunDailyNow', S.token).then(function(){ flash('完成，結果已發到 LINE 群組（有問題時才會發）', true); })
     .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
 $('btnRecon').onclick = function(){ var b = this; busy(b, true);
   call('adminRunReconcile', S.token).then(function(r){ var s = r.stats;
     flash('比對完成：已執行 ' + (s.MATCHED + s.MATCHED_NO_ID) + '（缺編號 ' + s.MATCHED_NO_ID + '）、不一致 ' + s.MISMATCH + '、未執行 ' + s.NOT_EXECUTED + '、等待中 ' + s.WAITING + '、無報備異動 ' + s.UNREPORTED, true); })
-    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
-$('btnSync').onclick = function(){ var b = this; busy(b, true);
-  call('adminSyncFit', S.token, $('s-from').value, $('s-to').value).then(function(r){ flash('新增 ' + r.added + ' 筆 17Fit 異動', true); })
     .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
 $('btnMembers').onclick = function(){ var b = this; busy(b, true);
   call('adminSyncMembers', S.token).then(function(r){ fmLoadState(); flash(r.done ? '學員名單已更新：' + r.count + ' 位' : '已下載 ' + r.page + '／' + r.last + ' 頁，其餘會在背景每分鐘接力下載（約 ' + Math.ceil((r.last - r.page) / 150) * 5 + ' 分鐘），完成後學員欄就會用新名單', true); S.memberIndex = null; })
