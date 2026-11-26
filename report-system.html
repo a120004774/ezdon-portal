@@ -478,6 +478,29 @@
               <button class="btn bad" id="btnSchRevoke">撤銷勾選頁面的定稿</button></div>
           </details>
         </div>
+        <div class="card" id="sch-sbCard">
+          <h2>5. 建立 17FIT 課表</h2>
+          <div class="muted">定稿核准後，由機器人建立這個月的 17FIT 課表。① 先按「預演」看和上個月比要改哪些課（不會動 17FIT）；② 勾選分店按「建立」，機器人照定稿建立整個月的課，狀態是「終止訂課」，學員還看不到；③ 經理到 17FIT 核對沒問題，再按「確認並上架」。</div>
+          <label style="display:flex;gap:8px;align-items:center;font-weight:normal;margin-top:8px"><input type="checkbox" id="sb-ignore" style="width:auto;margin:0">試算：當作 17FIT 還沒有這個月的課（用已經建好的月份檢查比對對不對）</label>
+          <div style="margin-top:10px"><button class="btn sec" id="btnSbPreview">預演（只比對，不動 17FIT）</button></div>
+          <div id="sb-result"></div>
+          <div id="sb-buildBox" style="margin-top:14px">
+            <h2>建立與上架</h2>
+            <div id="sb-branches" class="sch-pages"></div>
+            <div class="sch-confirm"><input id="sb-confirm" inputmode="numeric" maxlength="6" placeholder="輸入月份確認（例如 202701）">
+              <button class="btn" id="btnSbBuild">建立勾選分店的課表（終止訂課）</button></div>
+            <div style="margin-top:8px"><button class="btn ok" id="btnSbPublish">確認並上架勾選的分店</button></div>
+            <div id="sb-buildResult"></div>
+            <details style="margin-top:12px"><summary><b>測試（寫到沒有使用的平鎮新明店）</b></summary>
+              <div class="muted">用目前選的月份的定稿，把下面選的分店的課建到平鎮新明店的測試月份，確認建立、上架都正常後再刪掉。</div>
+              <select id="sb-testFrom"></select> <input id="sb-testMonth" value="2027-03" maxlength="7" style="width:110px">
+              <div style="margin-top:8px"><button class="btn sec" id="btnSbTestBuild">在平鎮新明店試建</button>
+                <button class="btn sec" id="btnSbTestPublish">試上架</button>
+                <button class="btn bad" id="btnSbTestClean">刪除平鎮新明店這個月的測試課</button></div>
+              <div id="sb-testResult"></div>
+            </details>
+          </div>
+        </div>
         <div class="card">
           <h2>版本紀錄</h2>
           <div id="sch-versions" class="muted">—</div>
@@ -757,6 +780,7 @@ function goTo(g){
   else if ((g === 'pending' || g === 'mgr') && me.role === 'MANAGER') show('mgr');
   else if (g === 'ca' && me.ca && me.ca.view) show('ca');
   else if (g === 'sched' && me.role === 'ADMIN') show('sched');
+  else if (g === 'sbtest' && me.role === 'ADMIN') { show('sched'); setTimeout(function(){ sbAutoTest(S.q || {}); }, 1500); }
 }
 
 /* ===== 導覽 ===== */
@@ -934,6 +958,67 @@ function setupTrialOrders(){
   };
   $('fld-member').addEventListener('change', load);
   $('fld-member').addEventListener('input', function(){ if ($('fld-member').value.trim() !== loaded) { loaded = null; seq++; reset('先選會員'); } });
+}
+/**
+ * 團課異動（2026-11-26 業主）：選了門市和日期後，到 17Fit 讀這天的課表、人員、課程。
+ * 點選要異動的課（已經開始、已停課的不列），帶入課堂時間、課名、教練、已預約人數（隱藏欄位，送出時伺服器會再到 17Fit 讀一次）。
+ */
+function setupGroupChange(){
+  var sel = $('fld-classId'), coach = $('fld-newCoach'), dl = $('dl-gc-course');
+  var hint = document.createElement('div'); hint.className = 'hint';
+  sel.parentNode.insertBefore(hint, sel.nextSibling);
+  var seq = 0, data = null, key = '';
+  var clearPick = function(){ ['classAt', 'course', 'coach', 'booked', 'qtyNow'].forEach(function(k){ $('fld-' + k).value = ''; }); };
+  var showPick = function(){
+    clearPick();
+    var c = data && data.classes.filter(function(x){ return x.id === sel.value; })[0];
+    if (!c) { hint.textContent = data ? '' : hint.textContent; return; }
+    $('fld-classAt').value = $('fld-classDate').value + 'T' + c.start; $('fld-course').value = c.title; $('fld-coach').value = c.coach;
+    $('fld-booked').value = c.booked; $('fld-qtyNow').value = c.qty;
+    var t = $('fld-changeType').value;
+    hint.innerHTML = esc(c.start + '～' + c.end + ' ' + c.title + '｜' + c.coach + '｜名額 ' + c.qty + ' 人、已預約 ' + c.booked + ' 人') +
+      (t === '名額調整' && c.booked ? '<br>新名額不能少於 ' + c.booked + ' 人。' : '') +
+      (t === '改時間或改課程' && c.booked ? '<br><span style="color:#b91c1c">⛔ 已經有人預約，17Fit 不能改這堂課的時間或課程，請改送「停課」再送「加開」。</span>' : '') +
+      (t === '停課' && c.booked ? '<br><span style="color:#b91c1c">停課會把這 ' + c.booked + ' 位學員退課並寄停課通知信。</span>' : '');
+  };
+  var fill = function(){
+    var t = $('fld-changeType').value, cur = sel.value;
+    if (!data) return;
+    var list = data.classes.filter(function(x){ return !x.suspended && !x.started; });
+    sel.innerHTML = '<option value="">' + (list.length ? '請選擇要異動的課（共 ' + list.length + ' 堂）' : '這天沒有可以異動的課') + '</option>' + list.map(function(x){
+      return '<option value="' + esc(x.id) + '">' + esc(x.start + ' ' + x.title + '｜' + x.coach + '｜已約 ' + x.booked + '/' + x.qty + (x.closed ? '｜終止訂課' : '')) + '</option>';
+    }).join('');
+    if (list.some(function(x){ return x.id === cur; })) sel.value = cur;
+    var hid = data.classes.length - list.length;
+    hint.textContent = t === '加開' ? '' : '17Fit 即時課表' + (hid ? '（已經開始或已停課的 ' + hid + ' 堂沒有列出）' : '') + '。';
+    showPick();
+  };
+  var load = function(){
+    var b = $('f-branch').value, d = $('fld-classDate').value, k = b + '|' + d;
+    if (k === key) return fill();
+    key = k; data = null; clearPick();
+    if (!b || !d) { sel.innerHTML = '<option value="">先選門市和日期</option>'; coach.innerHTML = '<option value="">先選門市和日期</option>'; hint.textContent = ''; return; }
+    var my = ++seq;
+    sel.innerHTML = '<option value="">讀取 17Fit 課表中…</option>'; coach.innerHTML = '<option value="">讀取中…</option>'; hint.textContent = '';
+    call('gcClasses', S.token, b, d).then(function(r){
+      if (my !== seq) return;
+      data = r;
+      var cv = coach.value;
+      coach.innerHTML = '<option value="">請選擇教練</option>' + r.trainers.map(function(n){ return '<option>' + esc(n) + '</option>'; }).join('');
+      if (cv) coach.value = cv;
+      dl.innerHTML = r.courses.map(function(n){ return '<option value="' + esc(n) + '">'; }).join('');
+      fill();
+    }).catch(function(e){
+      if (my !== seq) return;
+      key = ''; sel.innerHTML = '<option value="">讀不到 17Fit 課表</option>'; coach.innerHTML = '<option value="">讀不到 17Fit 人員</option>';
+      hint.textContent = '讀取 17Fit 課表失敗：' + (e && e.message || e) + '（請稍後再試）';
+    });
+  };
+  $('f-branch').addEventListener('change', load);
+  $('fld-classDate').addEventListener('change', load);
+  $('fld-changeType').addEventListener('change', load);
+  sel.addEventListener('change', showPick);
+  load();
 }
 function setupClassPick(){
   var sel = $('fld-correctCourse'), hint = document.createElement('div'); hint.className = 'hint';
@@ -1324,6 +1409,14 @@ function setupMemberPlans(def){
 function manualSteps(t, src){
   var noCancel = '（不要按「取消資格」，會把已約的課一起取消）';
   switch (t) {
+    case 'GROUP_CHANGE':
+      // src＝異動類型
+      if (src === '代課') return '到 17Fit 課表開啟這堂課（到月底的每一堂都要改），<b>主要教練</b>改成代課教練後儲存。';
+      if (src === '名額調整') return '到 17Fit 課表開啟這堂課（到月底的每一堂都要改），<b>人數</b>改成新名額後儲存。新名額不能少於已預約的人數。';
+      if (src === '改時間或改課程') return '到 17Fit 課表開啟這堂課，<b>狀態先改成「終止訂課」儲存</b>（上架中改時間不會生效），再改時間或課程儲存，最後狀態改回「上架」。有人預約的課不能改，請改送停課＋加開。';
+      if (src === '停課') return '到 17Fit 課表開啟這堂課，狀態改成<b>「停課」</b>，停課原因照上面選的，說明欄寫編號。';
+      if (src === '加開') return '到 17Fit 課表按「新增課表」，課程、日期、時間、教練照上面填的，課程時間 50 分鐘，點數照規則（皮拉提斯核心床、親子跳床 0 點，其他 12 點），狀態選「上架」。';
+      return '到 17Fit 課表照上面的異動修改這堂課。';
     case 'GIFT':
       if (src === '888直購' || src === '888銜接') return '幫會員<b>購買 0 元的「888直購/銜接贈課 N堂團體課」</b>（有贈教練課的再買「888直購/銜接贈課 N堂私人教練課」），堂數照上面帶出的贈送堂數，訂單備註寫編號，<b>不要用場館給予</b>。';
       if (src === 'BR轉介') return '幫介紹人<b>購買 0 元的「BR贈課…」方案</b>（訂單備註寫編號），不要用場館給予。';
@@ -1351,7 +1444,13 @@ function renderHint(){
   var t = $('f-type').value, def = S.boot.types[t], src = $('fld-source') ? $('fld-source').value : '', h = '';
   if (!def) return;
   if (t === 'BR_REFERRAL') h = '轉介通知不需要在 17Fit 操作。新客成交後送「一般贈課」（來源選 BR轉介）時，<b>要引用這筆轉介通知的編號</b>；BR 只贈介紹人，同一筆轉介只能贈送一次。';
-  else if (t === 'GROUP_CHANGE') h = '送出後會產生編號並通知主管核准；核准後照原本的方式到 17Fit 修改課表。';
+  else if (t === 'GROUP_CHANGE') {
+    var gct = $('fld-changeType') ? $('fld-changeType').value : '';
+    h = robotDoes(t) ? '送出後會產生編號並通知主管核准。核准後機器人會到 17Fit 修改課表（在 LINE 核准的話，大約 1 分鐘內），完成後請到「我的記錄」核對再按確認。<br>「我的記錄」顯示「機器人沒有做」或「做到一半停下」時，再照下面的做法自己到 17Fit 操作。' +
+      '<details style="margin-top:6px"><summary style="cursor:pointer">自己操作時的 17Fit 做法</summary><div style="margin-top:6px">' + manualSteps(t, gct) + '</div></details>' :
+      '送出後會產生編號並通知主管核准；核准後請自己到 17Fit 修改課表：<br>' + manualSteps(t, gct);
+    if (gct === '停課') h = '<div style="color:#b91c1c;font-weight:bold;margin-bottom:6px">⚠ 停課後 17Fit 會把已預約的學員全部退課、寄停課通知信給學員，而且<u>不能復原</u>（不能改回上架，也不能刪除）。只是換教練請選「代課」。</div>' + h;
+  }
   else {
     var apply = def.kind === 'APPLY', steps = manualSteps(t, src);
     var where = def.idHint ? '<br>編號要寫在<b>' + esc(def.idHint) + '</b>的開頭。' : '';
@@ -1392,6 +1491,10 @@ function renderFields(){
     else if (f.type === 'leavePick') input = '<select id="' + id + '"><option value="">讀取請假申請中…</option></select>';
     else if (f.type === 'planChecks') input = '<div id="' + id + '" class="hint">先選轉讓人</div>';
     else if (f.type === 'trialOrder') input = '<select id="' + id + '"><option value="">先選會員</option></select>';
+    else if (f.type === 'gcClassPick') input = '<select id="' + id + '"><option value="">先選門市和日期</option></select>';
+    else if (f.type === 'gcCoach') input = '<select id="' + id + '"><option value="">先選門市和日期</option></select>';
+    else if (f.type === 'gcCourse') input = '<input id="' + id + '" list="dl-gc-course" placeholder="' + esc(f.placeholder || '從清單選擇，或照課表寫') + '"><datalist id="dl-gc-course"></datalist>';
+    else if (f.type === 'time') input = '<input id="' + id + '" type="time" step="300">';
     else if (f.type === 'classPick') input = '<select id="' + id + '"><option value="">先選日期和分店</option></select>';
     else if (f.type === 'referral') input = '<select id="' + id + '" data-req="' + (f.required ? '1' : '') + '"></select>';
     else if (f.type === 'member') input = '<input id="' + id + '" list="dl-' + id + '" placeholder="輸入姓名或卡號的一部分，再從清單點選"><datalist id="dl-' + id + '"></datalist>';
@@ -1417,9 +1520,10 @@ function renderFields(){
       if (moreShown >= moreMax) moreBtn.style.display = 'none';
     };
   }
-  if ($('fld-source') && document.querySelector('#f-fields .fsrc')) {
+  var swKey = 'fld-' + (def.switchKey || 'source'); // 欄位依哪一個欄位顯示（一般贈課＝贈課來源；團課異動＝異動類型）
+  if ($(swKey) && document.querySelector('#f-fields .fsrc')) {
     var srcShow = function(){
-      var v = $('fld-source').value;
+      var v = $(swKey).value;
       Array.prototype.forEach.call(document.querySelectorAll('#f-fields .fsrc'), function(d){
         d.style.display = d.dataset.sources.split('|').indexOf(v) >= 0 ? '' : 'none';
         d.querySelector('.req').style.display = d.dataset.reqfor.split('|').indexOf(v) >= 0 ? '' : 'none';
@@ -1431,7 +1535,8 @@ function renderFields(){
       });
     };
     srcShow();
-    $('fld-source').addEventListener('change', srcShow);
+    $(swKey).addEventListener('change', srcShow);
+    $(swKey).addEventListener('change', renderHint);
   }
   def.fields.forEach(function(f){
     if (f.type === 'member') {
@@ -1493,6 +1598,7 @@ function renderFields(){
   if ($('f-type').value === 'TRANSFER') setupTransferPick();
   if ($('f-type').value === 'LEAVE_END') setupLeaveEnd();
   if ($('f-type').value === 'CANCEL_BOOKING') { setupBookings(); setupClassPick(); }
+  if ($('f-type').value === 'GROUP_CHANGE') setupGroupChange();
   // 2026-11-24 業主：折抵的新方案不能是 0 元贈送、單堂付費、體驗方案
   if ($('f-type').value === 'OFFSET' && $('fld-newContract')) {
     var dlo = $('dl-offset-new');
@@ -1815,7 +1921,8 @@ var SEQ_FREEZE = {
 };
 /** 這個欄位現在是不是必填（依類別、贈課來源） */
 function seqReqNow(t, f){
-  var cat = ($('fld-category') || {}).value || '', src = ($('fld-source') || {}).value || '';
+  var dsw = (S.boot.types[t] || {}).switchKey || 'source';
+  var cat = ($('fld-category') || {}).value || '', src = ($('fld-' + dsw) || {}).value || '';
   if (t === 'CANCEL_BOOKING') {
     if (/^correct/.test(f.key)) return /^[BD]/.test(cat);
     if (f.key === 'reason') return /^C/.test(cat);
@@ -1928,6 +2035,7 @@ function readFile(file){
 $('btnSubmit').onclick = function(){
   var b = this, type = $('f-type').value, def = S.boot.types[type], values = {};
   def.fields.forEach(function(f){ var el = $('fld-' + f.key); values[f.key] = f.type === 'check' ? (el.checked ? '是' : '否') : el.value; });
+  if (type === 'GROUP_CHANGE' && values.changeType === '停課' && !confirm('停課後 17Fit 會把已預約的學員全部退課、寄停課通知信，而且不能復原。確定要申請停課？')) return;
   if (!confirm('確定送出「' + def.label + '」？')) return;
   busy(b, true);
   call('submitRequest', S.token, type, values, $('f-branch').value, S.files).then(function(r){
@@ -2963,7 +3071,110 @@ function schSend(){
     return schRefresh();
   }, function(){});
 }
-$('sch-month').onchange = schLoadMonth;
+$('sch-month').onchange = function(){ $('sb-result').innerHTML = ''; schLoadMonth(); };
+
+/* ===== 建立 17FIT 課表：預演（2026-11-26 業主；SbJob.js） ===== */
+var SB_WD = ['', '週一', '週二', '週三', '週四', '週五', '週六', '週日'];
+function sbRender(r){
+  var md = function(d){ return d.slice(5).replace('-', '/'); };
+  var h = '<div class="muted" style="margin-top:10px">' + esc(r.month) + '｜定稿第 ' + esc(r.version) + ' 版｜' + esc(r.planNote) + (r.ignoreExisting ? '｜<b>試算：沒有看 17FIT 這個月已經有的課</b>' : '') + '</div>';
+  r.branches.forEach(function(b){
+    var c = b.counts;
+    var sum = '複製 ' + c.copy + ' 堂（' + b.copyDays + ' 天）' +
+      [c.COACH ? '換教練 ' + c.COACH : '', c.RENAME ? '改名稱 ' + c.RENAME : '', c.TIME ? '改成 50 分鐘 ' + c.TIME : '', c.ADD ? '新增 ' + c.ADD : '', c.DELETE ? '刪除 ' + c.DELETE : ''].filter(String).map(function(x){ return '、' + x + ' 堂'; }).join('');
+    var tpl = Object.keys(b.templates).sort().map(function(k){ return SB_WD[k] + ' ' + md(b.templates[k]); }).join('、');
+    h += '<details style="margin-top:10px"' + (b.unmatched.length || b.changes.length ? ' open' : '') + '><summary><b>' + esc(b.branch) + '</b>：' + esc(sum) +
+      (b.unmatched.length ? ' <span style="color:#b91c1c">⚠ 有 ' + b.unmatched.length + ' 項對不上</span>' : '') + '</summary><div class="kv" style="margin-top:6px">' +
+      '<div>複製來源（上個月同星期最後一天有課的日子）：' + esc(tpl || '沒有') + '</div>' +
+      (b.closedDays.length ? '<div>公休不建課：' + esc(b.closedDays.map(function(x){ return md(x.date) + ' ' + x.reason; }).join('、')) + '</div>' : '') +
+      (b.existingDays.length ? '<div>17FIT 已經有課、不複製：' + esc(b.existingDays.map(function(x){ return md(x.date) + '（' + x.n + ' 堂）'; }).join('、')) + '</div>' : '') +
+      (b.changes.length ? '<div style="margin-top:6px"><b>複製後要修正：</b><br>' + b.changes.map(esc).join('<br>') + '</div>' : '<div style="margin-top:6px">複製後不用修正（和定稿一樣）。</div>') +
+      (b.unmatched.length ? '<div style="margin-top:6px;color:#b91c1c"><b>對不上，機器人不會處理（請修正 Excel 或告訴我們對應的課程／人員）：</b><br>' + b.unmatched.map(esc).join('<br>') + '</div>' : '') +
+      '</div></details>';
+  });
+  return h;
+}
+var SB_BRANCHES = ['中壢', '內壢', '中山', '藝文', '楊梅'];
+$('sb-branches').innerHTML = SB_BRANCHES.map(function(b){ return '<label style="display:inline-flex;gap:6px;align-items:center;font-weight:normal;margin-right:12px"><input type="checkbox" class="sb-br" value="' + b + '" style="width:auto;margin:0">' + b + '</label>'; }).join('');
+$('sb-testFrom').innerHTML = SB_BRANCHES.map(function(b){ return '<option>' + b + '</option>'; }).join('');
+function sbYm(){ var m = String(schMonth()); return m.slice(0, 4) + '-' + m.slice(4, 6); }
+function sbBuildText(r){
+  return '<div style="margin-top:8px"><b>' + esc(r.target) + '</b>：' + (r.done ? '' : '<span style="color:#b45309">（還沒建完，再按一次會接著建）</span>') +
+    '建立 ' + r.created + ' 堂（' + r.ops + ' 組週期課表）' + (r.failed.length ? '、<span style="color:#b91c1c">失敗 ' + r.failed.length + ' 組</span>' : '') +
+    (r.missingCount ? '、<span style="color:#b91c1c">讀回少了 ' + r.missingCount + ' 堂</span>' : '') +
+    (r.skipDays.length ? '<br>原本就有課、沒有動的日子：' + esc(r.skipDays.map(function(d){ return d.slice(5).replace('-', '/'); }).join('、')) : '') +
+    (r.closedDays.length ? '<br>公休沒有建課：' + esc(r.closedDays.map(function(x){ return x.date.slice(5).replace('-', '/') + ' ' + x.reason; }).join('、')) : '') +
+    (r.skipped.length ? '<br><span style="color:#b91c1c">沒有建立（請人工處理）：<br>' + r.skipped.map(esc).join('<br>') + '</span>' : '') +
+    (r.failed.length ? '<br><span style="color:#b91c1c">失敗：<br>' + r.failed.map(esc).join('<br>') + '</span>' : '') +
+    (r.missing.length ? '<br><span style="color:#b91c1c">讀回少了：' + r.missing.map(esc).join('、') + '</span>' : '') + '</div>';
+}
+function sbLoop(list, fn, out){
+  var i = 0, html = '';
+  var next = function(){
+    if (i >= list.length) return Promise.resolve();
+    var b = list[i++];
+    out.innerHTML = html + '<div class="muted" style="margin-top:8px">' + esc(b) + '：處理中（每家店大約 1～3 分鐘）…</div>';
+    return fn(b).then(function(t){ html += t; out.innerHTML = html; }, function(e){ html += '<div style="color:#b91c1c;margin-top:8px">' + esc(b) + '：' + esc(e && e.message || e) + '</div>'; out.innerHTML = html; }).then(next);
+  };
+  return next();
+}
+$('btnSbBuild').onclick = function(){
+  var btn = this, ym = sbYm(), list = Array.prototype.filter.call(document.querySelectorAll('.sb-br'), function(x){ return x.checked; }).map(function(x){ return x.value; });
+  if (!list.length) return flash('請勾選要建立的分店', false);
+  if ($('sb-confirm').value.trim() !== String(schMonth())) return flash('請在確認欄輸入月份 ' + schMonth(), false);
+  if (!confirm('確定由機器人建立 ' + ym + ' ' + list.join('、') + ' 的 17FIT 課表？（狀態「終止訂課」，學員看不到）')) return;
+  busy(btn, true);
+  sbLoop(list, function(b){ return call('sbBuild', S.token, ym, b, {}).then(sbBuildText); }, $('sb-buildResult')).finally(function(){ busy(btn, false); });
+};
+$('btnSbPublish').onclick = function(){
+  var btn = this, ym = sbYm(), list = Array.prototype.filter.call(document.querySelectorAll('.sb-br'), function(x){ return x.checked; }).map(function(x){ return x.value; });
+  if (!list.length) return flash('請勾選要上架的分店', false);
+  if (!confirm('確定上架 ' + ym + ' ' + list.join('、') + ' 所有「終止訂課」的課？上架後學員就看得到、可以預約。')) return;
+  busy(btn, true);
+  sbLoop(list, function(b){ return call('sbPublish', S.token, ym, b, {}).then(function(r){ return '<div style="margin-top:8px"><b>' + esc(b) + '</b>：上架 ' + r.published + ' 堂' + (r.left ? '，<span style="color:#b91c1c">還有 ' + r.left + ' 堂沒上架</span>' : '') + (r.note ? '（' + esc(r.note) + '）' : '') + '</div>'; }); }, $('sb-buildResult')).finally(function(){ busy(btn, false); });
+};
+$('btnSbTestBuild').onclick = function(){
+  var btn = this, tm = $('sb-testMonth').value.trim(), b = $('sb-testFrom').value;
+  busy(btn, true);
+  sbLoop([b], function(x){ return call('sbBuild', S.token, tm, x, { test: true, finalMonth: sbYm() }).then(sbBuildText); }, $('sb-testResult')).finally(function(){ busy(btn, false); });
+};
+$('btnSbTestPublish').onclick = function(){
+  var btn = this, tm = $('sb-testMonth').value.trim(), b = $('sb-testFrom').value;
+  busy(btn, true);
+  call('sbPublish', S.token, tm, b, { test: true }).then(function(r){ $('sb-testResult').innerHTML += '<div style="margin-top:8px">試上架：' + r.published + ' 堂' + (r.left ? '，還有 ' + r.left + ' 堂沒上架' : '') + '</div>'; })
+    .catch(function(e){ flash(e.message || e, false); }).finally(function(){ busy(btn, false); });
+};
+$('btnSbTestClean').onclick = function(){
+  var btn = this, tm = $('sb-testMonth').value.trim();
+  if (!confirm('刪除平鎮新明店 ' + tm + ' 的所有課？')) return;
+  busy(btn, true);
+  call('sbTestCleanup', S.token, tm).then(function(r){ $('sb-testResult').innerHTML += '<div style="margin-top:8px">刪除 ' + r.deleted + ' 堂' + (r.kept ? '，' + r.kept + ' 堂沒刪（有人預約或刪除失敗）' : '') + '</div>'; })
+    .catch(function(e){ flash(e.message || e, false); }).finally(function(){ busy(btn, false); });
+};
+/**
+ * 測試用：網址 #go=sbtest&step=build|publish|clean&from=中壢&tm=2027-03&fm=2026-12 直接執行平鎮新明店的測試（只會寫平鎮新明店）。
+ * 方便在沒辦法點按鈕的環境（例如自動化測試）驗證整套流程。
+ */
+function sbAutoTest(q){
+  var tm = /^\d{4}-\d{2}$/.test(q.tm || '') ? q.tm : '2027-03', fm = /^\d{4}-\d{2}$/.test(q.fm || '') ? q.fm : sbYm();
+  var from = SB_BRANCHES.indexOf(q.from) >= 0 ? q.from : '中壢', out = $('sb-testResult');
+  out.parentNode.open = true; out.scrollIntoView();
+  var step = q.step || 'build';
+  out.innerHTML = '<div class="muted">自動測試：' + esc(step + '｜' + from + ' → 平鎮新明店 ' + tm + '（定稿 ' + fm + '）') + '…</div>';
+  var p = step === 'gc' ? call('gcTest', S.token, q.day || '').then(function(r){ return (r.ok ? '團課異動測試全部正確' : '<span style="color:#b91c1c">團課異動測試有錯</span>') + '<br>' + r.log.map(esc).join('<br>'); }) :
+    step === 'publish' ? call('sbPublish', S.token, tm, from, { test: true }).then(function(r){ return '試上架：' + r.published + ' 堂' + (r.left ? '，還有 ' + r.left + ' 堂沒上架' : '') + (r.note ? '（' + esc(r.note) + '）' : ''); }) :
+    step === 'clean' ? call('sbTestCleanup', S.token, tm).then(function(r){ return '刪除 ' + r.deleted + ' 堂' + (r.kept ? '，' + r.kept + ' 堂沒刪' : ''); }) :
+    call('sbBuild', S.token, tm, from, { test: true, finalMonth: fm }).then(sbBuildText);
+  p.then(function(h){ out.innerHTML = '<div id="sb-autoDone">' + h + '</div>'; out.scrollIntoView(); }, function(e){ out.innerHTML = '<div id="sb-autoDone" style="color:#b91c1c">' + esc(e && e.message || e) + '</div>'; out.scrollIntoView(); });
+}
+$('btnSbPreview').onclick = function(){
+  var b = this, m = schMonth(), ym = String(m).slice(0, 4) + '-' + String(m).slice(4, 6);
+  busy(b, true);
+  $('sb-result').innerHTML = '<div class="muted" style="margin-top:10px">讀取 17FIT 和 ' + esc(ym) + ' 定稿中（大約 1～2 分鐘）…</div>';
+  call('sbPreview', S.token, ym, { ignoreExisting: $('sb-ignore').checked }).then(function(r){ $('sb-result').innerHTML = sbRender(r); })
+    .catch(function(e){ $('sb-result').innerHTML = '<div class="hint" style="color:#b91c1c;margin-top:10px">' + esc(e && e.message || e) + '</div>'; })
+    .finally(function(){ busy(b, false); });
+};
 $('btnSchSources').onclick = schGuarded(schLoadSources);
 $('btnSchSubmit').onclick = schGuarded(function(){
   var v = schLatest(), m = schMonth();
@@ -3073,6 +3284,7 @@ function readHash(cb){
 function boot(){
   readHash(function(q){
     if (q.go) S.go = String(q.go).slice(0, 30);
+    S.q = q;
     if (!q.lt) {
       if (S.token) start().catch(function(){ doLogout(true); });
       else if (keepGet()) resumeKeep().then(start).catch(function(){ show('login'); });
