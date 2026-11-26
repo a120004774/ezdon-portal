@@ -2816,10 +2816,11 @@ function schOpen(){
       SCH.monthInfo = {};
       var years = [];
       opts.months.forEach(function(m){ SCH.monthInfo[m.yyyymm] = m; if (years.indexOf(m.year) < 0) years.push(m.year); });
-      $('sch-month').innerHTML = years.map(function(y){
+      // 2026-11-26 業主：月份預設留空，進分頁不自動載入，選了月份才載入
+      $('sch-month').innerHTML = '<option value="" selected>請選擇月份</option>' + years.map(function(y){
         return '<optgroup label="' + y + ' 年">' + opts.months.filter(function(m){ return m.year === y; }).map(function(m){
           var label = m.year + ' 年 ' + m.month + ' 月' + (m.relative ? '（' + m.relative + '）' : '') + (m.note ? '・' + m.note : '');
-          return '<option value="' + esc(m.yyyymm) + '"' + (m.yyyymm === opts['default'] ? ' selected' : '') + '>' + esc(label) + '</option>';
+          return '<option value="' + esc(m.yyyymm) + '">' + esc(label) + '</option>';
         }).join('') + '</optgroup>';
       }).join('');
       SCH.opened = true;
@@ -2846,6 +2847,7 @@ function schTimeout(p, ms){
   });
 }
 function schShowMonthNote(){
+  if (!schMonth()) { $('sch-monthNote').textContent = '請先選擇要處理的月份。'; return; }
   var m = SCH.monthInfo[schMonth()] || {};
   $('sch-monthNote').textContent = m.state === 'approved' ? '這個月已核准並鎖定，只能查看與下載，不能再製圖（要修改請撤銷定稿）。'
     : (m.note ? '目前：' + m.note : '這個月還沒有送審紀錄。');
@@ -2864,7 +2866,9 @@ function schLoadMonth(){
   schStopTracking();
   schShowMonthNote();
   var m = schMonth();
+  $('sch-area').classList.toggle('hidden', !m);
   SCH_ML.seq += 1; var seq = SCH_ML.seq;
+  if (!m) { SCH_ML.loading = false; SCH_ML.month = null; SCH_ML.error = null; SCH.view = null; return Promise.resolve(); }
   SCH_ML.loading = true; SCH_ML.month = m; SCH_ML.error = null;
   SCH.view = null;
   schPaint();
