@@ -2101,8 +2101,8 @@ function bindRobotConfirm(reload){
 function econtractLine(r){
   var e = r.econtract;
   if (!e) return '';
-  if (e.error) return '<div class="kv muted">活動升級合約：暫時讀不到 EzdonPT，請稍後重新整理</div>';
-  if (e.none) return '<div class="kv"><span class="badge">活動升級合約尚未建立</span> <span class="muted">教練在 EzdonPT 建立活動升級合約並填 ' + esc(r.id) + '</span></div>';
+  if (e.error) return '<div class="kv muted">活動升級合約：暫時讀不到電子簽署系統，請稍後重新整理</div>';
+  if (e.none) return '<div class="kv"><span class="badge">活動升級合約尚未建立</span> <span class="muted">教練在電子簽署系統建立活動升級合約並填 ' + esc(r.id) + '</span></div>';
   return '<div class="kv">' + (e.signed ? '<span class="badge b-ok">活動升級合約：已簽名 ' + esc(e.signedAt) + '</span>' : '<span class="badge b-warn">活動升級合約：待學員簽名</span>') +
     (e.pdfUrl ? ' <a href="' + esc(e.pdfUrl) + '" target="_blank">開啟 PDF</a>' : '') + '</div>';
 }
@@ -2110,11 +2110,11 @@ function econtractLine(r){
 function eformLine(r){
   var e = r.eform;
   if (!e) return '';
-  if (e.error) return '<div class="kv muted">電子申請書：暫時讀不到 EzdonPT，請稍後重新整理</div>';
+  if (e.error) return '<div class="kv muted">電子申請書：暫時讀不到電子簽署系統，請稍後重新整理</div>';
   // 2026-11-23 業主：核准時不擋，只看簽名狀態；附了紙本照片也算。核准後 3 天還沒簽，每日合約稽核列為「申請書未簽」
   var proofOnly = (S.boot.types[r.type] || {}).attachRequired; // 展延(請假)的附件是請假證明，不是紙本申請書
   if (!e.signed && !proofOnly && r.attachments && r.attachments.length) return '<div class="kv"><span class="badge b-ok">已附紙本申請書照片</span>' + (e.none ? '' : ' <span class="muted">（電子申請書待學員簽名）</span>') + '</div>';
-  if (e.none) return '<div class="kv"><span class="badge">電子申請書尚未產生</span> <span class="muted">教練在 EzdonPT 輸入 ' + esc(r.id) + ' 產生申請書</span></div>';
+  if (e.none) return '<div class="kv"><span class="badge">電子申請書尚未產生</span> <span class="muted">教練在電子簽署系統輸入 ' + esc(r.id) + ' 產生申請書</span></div>';
   return '<div class="kv">' + (e.signed ? '<span class="badge b-ok">電子申請書：已簽名 ' + esc(e.signedAt) + '</span>' : '<span class="badge b-warn">電子申請書：待學員簽名</span> <span class="muted">（核准後 3 天還沒簽會列入合約稽核）</span>') +
     (e.pdfUrl ? ' <a href="' + esc(e.pdfUrl) + '" target="_blank">開啟 PDF</a>' : '') +
     (e.attachments && e.attachments.length ? '　' + e.attachments.map(function(a){ return '<a href="' + esc(a.url) + '" target="_blank">' + esc(a.label) + (a.private ? '（私密）' : '') + '</a>'; }).join('　') : '') +
@@ -2399,7 +2399,7 @@ function caOpenCase(id){
     if (CA.boot.scope.handle) {
       h += '<div class="card"><h2>處理</h2><label>說明（新增備註、特殊交易、人工結案必填）</label><textarea id="caNote"></textarea><div class="row" style="margin-top:8px">' +
         CA.boot.actions.map(function(a){ return '<button class="btn sec" data-act="' + a.key + '">' + esc(a.label) + '</button>'; }).join('') + '</div>' +
-        '<p class="muted">處理只會改變這個案件，不會修改 17FIT 或 EZDonPT 的資料。</p></div>';
+        '<p class="muted">處理只會改變這個案件，不會修改 17FIT 或電子簽署系統的資料。</p></div>';
     }
     h += '<div class="card"><h2>處理歷程</h2>' + (d.events.map(function(e){
       return '<div class="kv">' + esc(e.ts) + '｜' + esc(e.actor) + '｜' + esc(e.action) + (e.toValue ? '→' + esc(e.toValue) : '') + (e.note ? '｜' + esc(e.note) : '') + '</div>'; }).join('') || '<p class="muted">無</p>') + '</div>';
