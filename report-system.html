@@ -529,6 +529,16 @@
         <div><button class="btn sec" id="btnRobotSave">儲存設定</button></div>
       </div>
       <div class="card">
+        <h2>電子合約學員的 17FIT 帳號</h2>
+        <p class="muted">學生在電子合約簽完名後，機器人每 10 分鐘到 17FIT 新增帳號「姓名＋卡號」、把 888／PT 帳號改名，或拿掉「(已退費)」「(已轉讓)」，再把會員編號寫回合約。疑似同一人、或失敗時不自己處理，發 LINE 群組請主管確認。</p>
+        <div class="row"><div><label>模式</label><select id="cf-mode"></select></div></div>
+        <div class="muted" id="cf-state"></div>
+        <div style="margin-top:10px"><button class="btn sec" id="btnCfSave">儲存設定</button>
+          <button class="btn sec" id="btnCfDry">預演（只讀，不改任何東西）</button>
+          <button class="btn sec" id="btnCfRun">立即執行一次</button></div>
+        <div id="cf-out"></div>
+      </div>
+      <div class="card">
         <h2>機器人操作記錄</h2>
         <div><button class="btn sec" id="btnRobotRuns">讀取最近 100 筆</button></div>
         <div id="robotRunsOut"></div>
@@ -2324,6 +2334,26 @@ $('btnRobotSave').onclick = function(){ var b = this, types = [];
   busy(b, true);
   call('adminRobotSettings', S.token, { mode: $('rb-mode').value, types: types }).then(function(){ flash('已儲存', true); robotLoadSettings(); })
     .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+function cfLoadSettings(){
+  call('adminCardFitSettings', S.token, null).then(function(s){
+    $('cf-mode').innerHTML = s.modes.map(function(m){ return '<option value="' + esc(m.value) + '"' + (m.value === s.mode ? ' selected' : '') + '>' + esc(m.label) + '</option>'; }).join('');
+    $('cf-state').textContent = s.pending < 0 ? '讀不到電子簽署系統的合約' : '目前等著處理：' + s.pending + ' 件';
+  }).catch(function(e){ flash(e.message); });
+}
+var CF_STATUS_LABEL = { DONE: '完成', HOLD: '要主管確認', FAILED: '失敗', ERROR: '這次失敗（會重試）', DRY: '預演：會做', SKIP: '跳過' };
+function cfShowResult(r){
+  $('cf-out').innerHTML = (r.results.length ? r.results.map(function(x){
+    return '<div class="kv"><b>' + esc(x.name) + ' ' + esc(x.card) + '</b>｜' + esc(x.action) + '｜' + esc(CF_STATUS_LABEL[x.status] || x.status) + '｜' + esc(x.note) +
+      '<span class="muted">（合約 ' + esc(x.contracts.join('、')) + '）</span></div>';
+  }).join('') : '<p class="muted">沒有要處理的合約</p>') + (r.cut ? '<p class="muted">時間到，其餘下次處理</p>' : '');
+}
+$('btnCfSave').onclick = function(){ var b = this; busy(b, true);
+  call('adminCardFitSettings', S.token, { mode: $('cf-mode').value }).then(function(){ flash('已儲存', true); cfLoadSettings(); })
+    .catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnCfDry').onclick = function(){ var b = this; busy(b, true);
+  call('adminCardFitDryRun', S.token).then(cfShowResult).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
+$('btnCfRun').onclick = function(){ var b = this; if (!confirm('會真的到 17FIT 新增帳號或改名，確定執行？')) return; busy(b, true);
+  call('adminCardFitRunNow', S.token).then(function(r){ cfShowResult(r); cfLoadSettings(); }).catch(function(e){ flash(e.message); }).finally(function(){ busy(b, false); }); };
 $('btnRobotRuns').onclick = function(){ var b = this; busy(b, true);
   call('adminRobotRuns', S.token).then(function(list){
     $('robotRunsOut').innerHTML = list.length ? list.map(function(x){
@@ -2483,7 +2513,7 @@ function sysShow(p){
   ['fit','ca','gc','att','va','sched','acc','pwd'].forEach(function(x){ $('sys-' + x).classList.toggle('hidden', x !== p); });
   Array.prototype.forEach.call($('sysSeg').children, function(b){ b.classList.toggle('on', b.dataset.p === p); });
   if (p === 'ca') caLoadRuns();
-  if (p === 'fit') { fmLoadState(); robotLoadSettings(); fitLoadRuns(); }
+  if (p === 'fit') { fmLoadState(); robotLoadSettings(); cfLoadSettings(); fitLoadRuns(); }
   if (p === 'acc') {
     loadAcc();
     // 系統維護 → 帳號：上半經理／管理員帳號，下半教練帳號管理（和經理的「教練帳號」分頁是同一份畫面）
