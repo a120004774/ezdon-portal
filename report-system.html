@@ -3091,6 +3091,7 @@ function sbRender(r){
       (b.unmatched.length ? ' <span style="color:#b91c1c">⚠ 有 ' + b.unmatched.length + ' 項對不上</span>' : '') + '</summary><div class="kv" style="margin-top:6px">' +
       '<div>複製來源（上個月同星期最後一天有課的日子）：' + esc(tpl || '沒有') + '</div>' +
       (b.closedDays.length ? '<div>公休不建課：' + esc(b.closedDays.map(function(x){ return md(x.date) + ' ' + x.reason; }).join('、')) + '</div>' : '') +
+      ((b.addsKept || []).length ? '<div>已核准的加開，照常建課並保留：' + esc(b.addsKept.map(function(x){ return md(x.date) + ' ' + x.start + ' ' + x.title; }).join('、')) + '</div>' : '') +
       ((b.satDays || []).length ? '<div>連假前週五，照週六的課表：' + esc(b.satDays.map(function(x){ return md(x.date); }).join('、')) + '</div>' : '') +
       (b.existingDays.length ? '<div>17FIT 已經有課、不複製：' + esc(b.existingDays.map(function(x){ return md(x.date) + '（' + x.n + ' 堂）'; }).join('、')) + '</div>' : '') +
       (b.changes.length ? '<div style="margin-top:6px"><b>複製後要修正：</b><br>' + b.changes.map(esc).join('<br>') + '</div>' : '<div style="margin-top:6px">複製後不用修正（和定稿一樣）。</div>') +
