@@ -530,7 +530,8 @@
       </div>
       <div class="card">
         <h2>電子合約學員的 17FIT 帳號</h2>
-        <p class="muted">學生在電子合約簽完名後，機器人每 10 分鐘到 17FIT 新增帳號「姓名＋卡號」、把 888／PT 帳號改名，或拿掉「(已退費)」「(已轉讓)」，再把會員編號寫回合約。疑似同一人、或失敗時不自己處理，發 LINE 群組請主管確認。</p>
+        <p class="muted">學生在電子合約簽完名，機器人會馬上到 17FIT 新增帳號「姓名＋卡號」、把 888／PT 帳號改名，或拿掉「(已退費)」「(已轉讓)」，再把會員編號寫回合約，教練畫面立刻看得到結果。改名沒馬上處理到的（例如機器人正在忙），每 10 分鐘的排程會補做；新增帳號不讓教練等，建失敗或機器人正在忙，就直接在教練畫面顯示應該建的帳號名稱，請教練手動新增。疑似同一人時不自己處理，發 LINE 群組請主管確認；機器人執行失敗會在 EZOne 通知 Vincent。</p>
+        <p class="muted">模式：關閉＝都不做。預演＝只讀，教練畫面會顯示機器人打算做什麼，但不改 17FIT、不寫回合約。只限測試會員＝只改測試會員，不新增帳號。開啟＝正式處理。</p>
         <div class="row"><div><label>模式</label><select id="cf-mode"></select></div></div>
         <div class="muted" id="cf-state"></div>
         <div style="margin-top:10px"><button class="btn sec" id="btnCfSave">儲存設定</button>
