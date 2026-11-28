@@ -3081,7 +3081,7 @@ $('sch-month').onchange = function(){ $('sb-result').innerHTML = ''; schLoadMont
 var SB_WD = ['', '週一', '週二', '週三', '週四', '週五', '週六', '週日'];
 function sbRender(r){
   var md = function(d){ return d.slice(5).replace('-', '/'); };
-  var h = '<div class="muted" style="margin-top:10px">' + esc(r.month) + '｜定稿第 ' + esc(r.version) + ' 版｜' + esc(r.planNote) + (r.ignoreExisting ? '｜<b>試算：沒有看 17FIT 這個月已經有的課</b>' : '') + '</div>';
+  var h = '<div class="muted" style="margin-top:10px">' + esc(r.month) + '｜定稿第 ' + esc(r.version) + ' 版｜' + esc(r.planNote) + (r.ignoreExisting ? '｜<b>試算：沒有看 17FIT 這個月已經有的課</b>' : '') + '</div>' + sbCalWarnHtml(r.calWarnings);
   r.branches.forEach(function(b){
     var c = b.counts;
     var sum = '複製 ' + c.copy + ' 堂（' + b.copyDays + ' 天）' +
@@ -3104,7 +3104,25 @@ var SB_BRANCHES = ['中壢', '內壢', '中山', '藝文', '楊梅'];
 $('sb-branches').innerHTML = SB_BRANCHES.map(function(b){ return '<label style="display:inline-flex;gap:6px;align-items:center;font-weight:normal;margin-right:12px"><input type="checkbox" class="sb-br" value="' + b + '" style="width:auto;margin:0">' + b + '</label>'; }).join('');
 $('sb-testFrom').innerHTML = SB_BRANCHES.map(function(b){ return '<option>' + b + '</option>'; }).join('');
 function sbYm(){ var m = String(schMonth()); return m.slice(0, 4) + '-' + m.slice(4, 6); }
+/** 營業日曆的警告（例如缺政府辦公日曆，國定假日會照常建課） */
+function sbCalWarnHtml(ws){
+  if (!ws || !ws.length) return '';
+  return '<div style="margin-top:10px;padding:8px 10px;border:1px solid #b91c1c;border-radius:6px;color:#b91c1c"><b>⚠ 營業日曆有警告，建課表前請先確認：</b><br>' + ws.map(esc).join('<br>') + '</div>';
+}
+/**
+ * 建一家店：營業日曆有警告時伺服器先不建（blocked），問過人再帶 ackCalWarnings 重送。
+ * ack：同一次按鈕共用，確認一次後其他店不再問。
+ */
+function sbBuildOne(ym, b, opts, ack){
+  return call('sbBuild', S.token, ym, b, Object.assign({}, opts, ack.ok ? { ackCalWarnings: true } : {})).then(function(r){
+    if (!r.blocked) return sbBuildText(r);
+    if (ack.ok === undefined) ack.ok = confirm('營業日曆有警告：\n\n' + r.calWarnings.join('\n') + '\n\n照這份日曆建課，國定假日、公休日可能也會有課。確定仍要建立？');
+    if (!ack.ok) return '<div style="margin-top:8px"><b>' + esc(r.target) + '</b>：營業日曆有警告，沒有建立。' + sbCalWarnHtml(r.calWarnings) + '</div>';
+    return call('sbBuild', S.token, ym, b, Object.assign({}, opts, { ackCalWarnings: true })).then(sbBuildText);
+  });
+}
 function sbBuildText(r){
+  if (r.blocked) return '<div style="margin-top:8px"><b>' + esc(r.target) + '</b>：營業日曆有警告，沒有建立。' + sbCalWarnHtml(r.calWarnings) + '</div>';
   return '<div style="margin-top:8px"><b>' + esc(r.target) + '</b>：' + (r.done ? '' : '<span style="color:#b45309">（還沒建完，再按一次會接著建）</span>') +
     '建立 ' + r.created + ' 堂（' + r.ops + ' 組週期課表）' + (r.failed.length ? '、<span style="color:#b91c1c">失敗 ' + r.failed.length + ' 組</span>' : '') +
     (r.missingCount ? '、<span style="color:#b91c1c">讀回少了 ' + r.missingCount + ' 堂</span>' : '') +
@@ -3130,7 +3148,8 @@ $('btnSbBuild').onclick = function(){
   if ($('sb-confirm').value.trim() !== String(schMonth())) return flash('請在確認欄輸入月份 ' + schMonth(), false);
   if (!confirm('確定由機器人建立 ' + ym + ' ' + list.join('、') + ' 的 17FIT 課表？（狀態「終止訂課」，學員看不到）')) return;
   busy(btn, true);
-  sbLoop(list, function(b){ return call('sbBuild', S.token, ym, b, {}).then(sbBuildText); }, $('sb-buildResult')).finally(function(){ busy(btn, false); });
+  var ack = {};
+  sbLoop(list, function(b){ return sbBuildOne(ym, b, {}, ack); }, $('sb-buildResult')).finally(function(){ busy(btn, false); });
 };
 $('btnSbPublish').onclick = function(){
   var btn = this, ym = sbYm(), list = Array.prototype.filter.call(document.querySelectorAll('.sb-br'), function(x){ return x.checked; }).map(function(x){ return x.value; });
@@ -3142,7 +3161,7 @@ $('btnSbPublish').onclick = function(){
 $('btnSbTestBuild').onclick = function(){
   var btn = this, tm = $('sb-testMonth').value.trim(), b = $('sb-testFrom').value;
   busy(btn, true);
-  sbLoop([b], function(x){ return call('sbBuild', S.token, tm, x, { test: true, finalMonth: sbYm() }).then(sbBuildText); }, $('sb-testResult')).finally(function(){ busy(btn, false); });
+  sbLoop([b], function(x){ return sbBuildOne(tm, x, { test: true, finalMonth: sbYm() }, {}); }, $('sb-testResult')).finally(function(){ busy(btn, false); });
 };
 $('btnSbTestPublish').onclick = function(){
   var btn = this, tm = $('sb-testMonth').value.trim(), b = $('sb-testFrom').value;
